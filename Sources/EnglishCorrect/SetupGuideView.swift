@@ -17,9 +17,14 @@ struct SetupGuideView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("A little setup. Better writing.")
                     .font(.system(size: 32, weight: .medium, design: .serif))
-                Text("Connect a local model, choose where you want help, and decide when suggestions appear.")
+                Text("Set up your local AI app, choose a model, and decide where and when you want help.")
                     .font(.system(size: 14)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+            LocalModelSetupView(library: model.library)
+            if model.provider != .builtIn {
+                Button("Use built-in AI instead—no extra app needed") { model.useBuiltInAI() }
+                    .disabled(model.library.isBusy)
             }
             HStack(spacing: 12) {
                 if model.setupAIState.isChecking {
@@ -48,7 +53,9 @@ struct SetupGuideView: View {
                     }
                     Text(model.setupAIState.message)
                     if !model.setupAIState.isReady && !model.setupAIState.isChecking {
-                        Text(model.provider == .lmStudio
+                        Text(model.provider == .builtIn
+                             ? "Open Models, download Fast or Pro, then choose Use. The model will start and setup will check it automatically."
+                             : model.provider == .lmStudio
                              ? "Start LM Studio’s local server, then open Models. Download Fast or Pro and choose Use to select it. Setup will check it automatically."
                              : "Start Ollama on this Mac, then open Models. Download Fast or Pro and choose Use to select it. Setup will check it automatically.")
                     }

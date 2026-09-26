@@ -77,13 +77,13 @@ Requires an Apple silicon Mac (M1 or later) with macOS $RELEASE_MINIMUM_OS or la
 1. If updating, quit the existing English Correct app first. Drag
    English Correct.app to the Applications folder shown beside it.
 2. Eject this disk image, then open English Correct from Applications.
-3. Follow the Setup Guide. Install LM Studio 0.4 or newer separately and
-   start its local server on port 1234. In Models, choose Download Fast or
-   Download Pro, then Use Fast or Use Pro when the download finishes.
+3. Follow the Setup Guide. The local AI engine is included. In Models,
+   choose Download Fast or Download Pro, then Use Fast or Use Pro.
+   No LM Studio or separate server is needed for new installations.
 4. To check writing in other apps, grant Accessibility access and choose
    which apps you allow. Automatic suggestions require your explicit choice.
 
-Model weights and AI runtimes are not included in this download.
+The local AI engine is included; model weights are separate downloads.
 
 $SIGNING_NOTE
 $NOTARIZATION_NOTE
@@ -96,6 +96,8 @@ EOF
 while IFS= read -r resource; do
     case "${resource#"$PACKAGE_STAGE/English Correct.app/"}" in
         Contents/Info.plist|Contents/MacOS/EnglishCorrect|Contents/Resources/AppIcon.icns|Contents/_CodeSignature/CodeResources) ;;
+        Contents/Resources/LocalEngine/llama-server|Contents/Resources/LocalEngine/*.dylib) ;;
+        Contents/Resources/Credits/llama.cpp-LICENSE.txt|Contents/Resources/Credits/llama.cpp-THIRD-PARTY.txt) ;;
         Contents/Resources/Credits/Attribution.txt|Contents/Resources/Credits/Sources.json) ;;
         Contents/Resources/Credits/Qwen2.5-1.5B-Instruct-LICENSE.txt|Contents/Resources/Credits/Qwen2.5-7B-Instruct-LICENSE.txt) ;;
         *) echo "Unexpected app resource; review before distribution: $resource" >&2; exit 1 ;;

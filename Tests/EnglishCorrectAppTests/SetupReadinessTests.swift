@@ -533,6 +533,7 @@ private final class SetupFixture {
     init(trusted: Bool = true, allowed: Bool = true, registered: Bool = true, model: String = "qwen2.5-1.5b-instruct") throws {
         defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defaults.set(model, forKey: "model")
+        defaults.set(LocalProvider.lmStudio.rawValue, forKey: "provider")
         defaults.set(try JSONEncoder().encode([AppPermission(id: Self.permission.id, name: Self.permission.name, allowed: allowed)]), forKey: "appPermissions")
         backend.isTrusted = trusted
         monitor = AccessibilityMonitor(backend: backend)

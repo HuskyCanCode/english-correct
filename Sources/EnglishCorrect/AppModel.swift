@@ -40,7 +40,7 @@ final class AppModel: ObservableObject {
     @Published var monitoringStatus = "Suggestions are paused"
     @Published var permissions: [AppPermission] = []
     @Published var runningApps: [AppPermission] = []
-    @Published var provider: LocalProvider = .lmStudio { didSet { if provider != oldValue && !isRestoringSettings { switchProvider() } } }
+    @Published var provider: LocalProvider = .builtIn { didSet { if provider != oldValue && !isRestoringSettings { switchProvider() } } }
     @Published var baseURL = "http://127.0.0.1:1234" { didSet { if baseURL != oldValue { saveConfiguration() } } }
     @Published var model = "" { didSet { if model != oldValue { defaultsModelChanged() } } }
     @Published var models: [String] = []
@@ -94,10 +94,12 @@ final class AppModel: ObservableObject {
     init(defaults: UserDefaults = .standard, monitor: AccessibilityMonitor? = nil, modelLibrary: ModelLibrary? = nil,
          startMonitoring: Bool = true,
          listModels: @escaping (LocalAIConfiguration) async throws -> [String] = { config in
-             try await LocalAIClient(configuration: config).models()
+             if config.provider == .builtIn { return try await BuiltInAI.models(config) }
+             return try await LocalAIClient(configuration: config).models()
          },
          correctText: @escaping (String, LocalAIConfiguration) async throws -> Correction = { text, config in
-             try await LocalAIClient(configuration: config).correct(text)
+             if config.provider == .builtIn { return try await BuiltInAI.correct(text, configuration: config) }
+             return try await LocalAIClient(configuration: config).correct(text)
          }) {
         self.defaults = defaults
         // Older versions already saved these preferences before onboarding existed.
@@ -113,6 +115,10 @@ final class AppModel: ObservableObject {
         if let raw = defaults.string(forKey: "provider"), let saved = LocalProvider(rawValue: raw) { provider = saved }
         baseURL = defaults.string(forKey: "baseURL") ?? "http://127.0.0.1:1234"
         model = defaults.string(forKey: "model") ?? ""
+        if defaults.string(forKey: "provider") == nil {
+            provider = model.isEmpty ? .builtIn : .lmStudio
+            baseURL = provider.defaultBaseURL
+        }
         if let saved = defaults.string(forKey: "correctionShortcut"), let choice = CorrectionShortcut(rawValue: saved) { shortcut = choice }
         setupCompleted = defaults.bool(forKey: "setupGuideCompleted")
         section = hasUsedApp ? "Write" : "Setup"
@@ -271,6 +277,16 @@ final class AppModel: ObservableObject {
         setupCompleted = true
         defaults.set(true, forKey: "setupGuideCompleted")
         section = "Write"
+    }
+
+    func useBuiltInAI() {
+        guard !library.isBusy else { return }
+        model = ""
+        provider = .builtIn
+        baseURL = provider.defaultBaseURL
+        library.configure(configuration)
+        library.refresh()
+        section = "Models"
     }
 
     func openSetup() {

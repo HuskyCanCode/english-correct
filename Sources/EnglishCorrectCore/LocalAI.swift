@@ -4,10 +4,11 @@ import FoundationNetworking
 #endif
 
 public enum LocalProvider: String, CaseIterable, Codable, Sendable {
+    case builtIn
     case lmStudio
     case ollama
 
-    public var displayName: String { self == .lmStudio ? "LM Studio" : "Ollama" }
+    public var displayName: String { self == .builtIn ? "Built-in AI" : (self == .lmStudio ? "LM Studio" : "Ollama") }
     public var defaultBaseURL: String {
         self == .lmStudio ? "http://127.0.0.1:1234" : "http://127.0.0.1:11434"
     }
@@ -17,11 +18,13 @@ public struct LocalAIConfiguration: Equatable, Sendable {
     public var provider: LocalProvider
     public var baseURL: String
     public var model: String
+    public var apiKey: String?
 
-    public init(provider: LocalProvider, baseURL: String, model: String) {
+    public init(provider: LocalProvider, baseURL: String, model: String, apiKey: String? = nil) {
         self.provider = provider
         self.baseURL = baseURL
         self.model = model
+        self.apiKey = apiKey
     }
 }
 
@@ -102,9 +105,9 @@ public struct LocalAIClient: Sendable {
     }
 
     public func models() async throws -> [String] {
-        let path = configuration.provider == .lmStudio ? "/v1/models" : "/api/tags"
+        let path = configuration.provider != .ollama ? "/v1/models" : "/api/tags"
         var request = URLRequest(url: try Self.endpoint(configuration, path: path))
-        request.timeoutInterval = 10
+        request.timeoutInterval = configuration.provider == .builtIn ? 2 : 10
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         return try Self.parseModels(try await requestData(request), provider: configuration.provider)
     }
@@ -128,6 +131,8 @@ public struct LocalAIClient: Sendable {
     private func requestData(_ request: URLRequest) async throws -> Data {
         do {
             try Task.checkCancellation()
+            var request = request
+            if let apiKey = configuration.apiKey { request.setValue("Bearer " + apiKey, forHTTPHeaderField: "Authorization") }
             let (data, response) = try await transport(request)
             try Task.checkCancellation()
             guard !(300..<400).contains(response.statusCode) else { throw LocalAIError.redirectBlocked }
@@ -152,7 +157,7 @@ public struct LocalAIClient: Sendable {
               components.port.map({ (1...65535).contains($0) }) ?? true else {
             throw LocalAIError.invalidAddress
         }
-        let permittedPaths = configuration.provider == .lmStudio ? ["", "/", "/v1", "/v1/"] : ["", "/", "/api", "/api/"]
+        let permittedPaths = configuration.provider != .ollama ? ["", "/", "/v1", "/v1/"] : ["", "/", "/api", "/api/"]
         guard permittedPaths.contains(components.percentEncodedPath) else { throw LocalAIError.invalidAddress }
         // Pin localhost to a literal loopback address instead of relying on DNS.
         if host == "localhost" { components.host = "127.0.0.1" }
@@ -182,7 +187,7 @@ public struct LocalAIClient: Sendable {
         let body: [String: Any]
         let path: String
         switch configuration.provider {
-        case .lmStudio:
+        case .lmStudio, .builtIn:
             path = "/v1/chat/completions"
             body = [
                 "model": configuration.model,
@@ -211,11 +216,11 @@ public struct LocalAIClient: Sendable {
         guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             throw LocalAIError.invalidResponse
         }
-        let key = provider == .lmStudio ? "data" : "models"
+        let key = provider != .ollama ? "data" : "models"
         guard let records = root[key] as? [[String: Any]] else { throw LocalAIError.invalidResponse }
         var names: Set<String> = []
         for record in records {
-            guard let name = record[provider == .lmStudio ? "id" : "name"] as? String,
+            guard let name = record[provider != .ollama ? "id" : "name"] as? String,
                   !name.isEmpty, name.count <= 512 else { throw LocalAIError.invalidResponse }
             if isEmbeddingModel(record, name: name) { continue }
             if provider == .ollama {
@@ -249,7 +254,7 @@ public struct LocalAIClient: Sendable {
         }
         let content: String
         switch provider {
-        case .lmStudio:
+        case .lmStudio, .builtIn:
             guard let choices = root["choices"] as? [[String: Any]], let first = choices.first else {
                 throw LocalAIError.invalidResponse
             }

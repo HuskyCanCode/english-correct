@@ -171,7 +171,7 @@ final class ModelDownloadClientTests: XCTestCase {
     }
 
     func testRemoteEndpointsFailBeforeAnyTransport() async throws {
-        for provider in LocalProvider.allCases {
+        for provider in [LocalProvider.lmStudio, .ollama] {
             for address in ["https://localhost", "http://192.168.1.5", "http://localhost.evil.example", "http://user@localhost", "http://localhost?query=secret"] {
                 let recorder = DownloadRecorder()
                 let client = ModelDownloadClient(configuration: config(provider, address: address), transport: { request in
@@ -280,7 +280,7 @@ final class ModelDownloadClientTests: XCTestCase {
     }
 
     func testPrepareModelRejectsCloudOrEmptyIDsAndInvalidLoadedResponses() async throws {
-        for provider in LocalProvider.allCases {
+        for provider in [LocalProvider.lmStudio, .ollama] {
             let client = ModelDownloadClient(configuration: config(provider)) { _ in XCTFail("Invalid ID reached transport"); throw ModelDownloadError.invalidResponse }
             for identifier in ["", " \n", "qwen:cloud", "gpt-oss:20b-cloud", "name\n", String(repeating: "a", count: 513)] {
                 do { _ = try await client.prepareModel(identifier); XCTFail("Invalid model accepted") }
@@ -639,6 +639,61 @@ final class ModelDownloadClientTests: XCTestCase {
         catch { XCTAssertTrue(error is CancellationError) }
         let paths = await recorder.requests.map { $0.url!.path }
         XCTAssertEqual(paths, ["/api/v1/models", "/api/v1/models/unload"])
+    }
+
+    func testFreshLMStudioServerNeedsNoDownloadedOrSelectedModelForDiscovery() async throws {
+        let recorder = DownloadRecorder()
+        let payload = try data(["models": []])
+        let configuration = LocalAIConfiguration(provider: .lmStudio, baseURL: "http://localhost:1234", model: "")
+        let client = ModelDownloadClient(configuration: configuration) { request in
+            await recorder.record(request)
+            return (payload, self.response(request))
+        }
+        let identifiers = try await client.installedModelIDs()
+        XCTAssertEqual(identifiers, [])
+        let requests = await recorder.requests
+        XCTAssertEqual(requests.count, 1)
+        let request = try XCTUnwrap(requests.first)
+        XCTAssertEqual(request.url?.absoluteString, "http://127.0.0.1:1234/api/v1/models")
+        XCTAssertEqual(request.httpMethod, "GET")
+        XCTAssertNil(request.httpBody)
+    }
+
+    func testNativeDiscoveryDistinguishesUnavailableServerFromEmptyLibraryWithoutFallback() async throws {
+        for (status, expected): (Int, ModelDownloadError) in [
+            (401, .authenticationRequired), (403, .authenticationRequired),
+            (404, .endpointUnavailable), (405, .endpointUnavailable), (501, .endpointUnavailable),
+            (307, .redirectBlocked), (503, .serverError(503))
+        ] {
+            let recorder = DownloadRecorder()
+            // Even a library-shaped error body must not mark the server ready.
+            let payload = try data(["models": []])
+            let client = ModelDownloadClient(configuration: config()) { request in
+                await recorder.record(request)
+                return (payload, self.response(request, code: status))
+            }
+            do { _ = try await client.installedModelIDs(); XCTFail("Failed server reported an empty library") }
+            catch { XCTAssertEqual(error as? ModelDownloadError, expected) }
+            let paths = await recorder.requests.map { $0.url!.path }
+            XCTAssertEqual(paths, ["/api/v1/models"])
+        }
+    }
+
+    func testNativeDiscoveryPreservesOfflineTimeoutAndCancellationWithoutRetry() async throws {
+        for code: URLError.Code in [.cannotConnectToHost, .networkConnectionLost, .timedOut, .cancelled] {
+            let recorder = DownloadRecorder()
+            let client = ModelDownloadClient(configuration: config()) { request in
+                await recorder.record(request)
+                throw URLError(code)
+            }
+            do { _ = try await client.installedModelIDs(); XCTFail("Failed connection reported an empty library") }
+            catch {
+                if code == .cancelled { XCTAssertTrue(error is CancellationError) }
+                else { XCTAssertEqual(error as? ModelDownloadError, code == .timedOut ? .timedOut : .connectionFailed) }
+            }
+            let paths = await recorder.requests.map { $0.url!.path }
+            XCTAssertEqual(paths, ["/api/v1/models"])
+        }
     }
 
     func testInstalledLMStudioModelsIncludeUnloadedLLMsOnly() async throws {

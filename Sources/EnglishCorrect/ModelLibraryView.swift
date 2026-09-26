@@ -11,6 +11,14 @@ struct ModelLibraryView: View {
                 Text("A model that fits your Mac.").font(.system(size: 34, weight: .medium, design: .serif))
                 Text("Choose a lighter model for quick edits, or a larger one for more demanding writing. Both are free to download and run locally.").font(.system(size: 14)).foregroundStyle(.secondary).lineSpacing(4)
             }
+            LocalModelSetupView(library: library)
+            if appModel.provider != .builtIn {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("You can now use English Correct without \(appModel.provider.displayName). Existing model files stay in that app.")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                    Button("Use built-in AI instead") { appModel.useBuiltInAI() }.disabled(library.isBusy)
+                }
+            }
             HStack(spacing: 14) {
                 Label("\(library.memoryGB) GB on this Mac", systemImage: "desktopcomputer").font(.system(size: 12, weight: .medium))
                 Spacer()
@@ -29,18 +37,14 @@ struct ModelLibraryView: View {
                 Label("Download once. Write locally.", systemImage: "lock.shield").font(.system(size: 14, weight: .semibold)).foregroundStyle(GlassTheme.accent)
                 Text("Downloads need internet access and are handled by \(appModel.provider.displayName). Model files come from the linked publisher or Ollama registry; your writing is not included in the download request.").font(.system(size: 12)).foregroundStyle(.secondary).lineSpacing(4)
                 Text("Sizes are approximate and vary by provider. Memory figures are our recommendations. Speed and correction quality depend on your Mac and the text; Fast and Pro are local presets, with no subscription.").font(.system(size: 12)).foregroundStyle(.secondary).lineSpacing(4)
-                HStack {
-                    Button("Open \(appModel.provider.displayName)") { openProvider() }.glassAction()
-                    Spacer()
-                }
                 if appModel.provider == .lmStudio {
                     Text("Requires LM Studio 0.4 or newer with its local server running. Use LM Studio to pause or cancel a download; Stop checking only stops the progress display here.").font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(3)
-                } else {
+                } else if appModel.provider == .ollama {
                     Text("Start Ollama before downloading. A stopped transfer can reuse partial files when you retry.").font(.system(size: 11)).foregroundStyle(.secondary)
                 }
             }.padding(19).contentSurface(cornerRadius: 18, tinted: false)
         }
-        .task(id: appModel.provider.rawValue + appModel.baseURL) { library.configure(appModel.configuration); library.refresh() }
+        .task(id: appModel.provider.rawValue + appModel.baseURL) { library.configure(appModel.configuration) }
         .alert("Delete downloaded model?", isPresented: Binding(
             get: { library.pendingDeletion != nil },
             set: { if !$0 { library.cancelDeletion() } }
@@ -110,14 +114,18 @@ struct ModelLibraryView: View {
             } else if installed != nil {
                 Button(preparing ? "Preparing…" : (isActive ? "Using \(item.tier)" : "Use \(item.tier)")) {
                     library.use(item) { id in appModel.model = id; appModel.connectionStatus = "\(item.tier) is ready · \(appModel.provider.displayName)" }
-                }.glassAction(prominent: true).controlSize(.large).frame(maxWidth: .infinity).disabled(library.isBusy || isActive)
+                }.glassAction(prominent: true).controlSize(.large).frame(maxWidth: .infinity).disabled(library.isBusy || library.checking || !library.serverReady || isActive)
                 Button("Delete \(item.tier)…", role: .destructive) { library.requestDeletion(item) }
                     .glassAction().font(.system(size: 11)).frame(maxWidth: .infinity).disabled(library.isBusy || library.checking)
             } else {
                 Button("Download \(item.tier)") { library.download(item) }
-                    .glassAction(prominent: true).controlSize(.large).frame(maxWidth: .infinity).disabled(library.isBusy)
+                    .glassAction(prominent: true).controlSize(.large).frame(maxWidth: .infinity).disabled(library.isBusy || library.checking || !library.serverReady)
+                if !library.serverReady {
+                    Text("Connect \(appModel.provider.displayName) above to download.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                }
                 if library.savedJob(item) != nil {
-                    Button("Resume checking") { library.resume(item) }.glassAction().font(.system(size: 11)).disabled(library.isBusy)
+                    Button("Resume checking") { library.resume(item) }.glassAction().font(.system(size: 11)).disabled(library.isBusy || library.checking || !library.serverReady)
                 }
             }
         }.padding(20).frame(maxWidth: .infinity, minHeight: 390, alignment: .topLeading)
@@ -129,18 +137,14 @@ struct ModelLibraryView: View {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
     private func deletionMessage(_ request: ModelDeletionRequest) -> String {
-        let storage = request.provider == .lmStudio
+        let storage = request.provider == .builtIn
+            ? "Its downloaded files will be permanently removed from English Correct. Other apps’ model files are not affected."
+            : request.provider == .lmStudio
             ? "Its downloaded files will move to Trash. Empty Trash later to free the disk space."
             : "Its downloaded copy will be removed from Ollama. Files shared with other models may remain."
         let active = request.matchesSelectedModel(appModel.model)
             ? " This is your active writing model; choose or download a model before checking more text."
             : ""
-        return "\(request.item.name) (Q4_K_M)\n\(request.installedModelID)\n\n\(storage) Other apps using this model will also be affected.\(active)\n\nYou can download \(request.item.tier) again from this card."
-    }
-    private func openProvider() {
-        let name = appModel.provider == .lmStudio ? "LM Studio" : "Ollama"
-        let url = URL(fileURLWithPath: "/Applications/\(name).app")
-        if FileManager.default.fileExists(atPath: url.path) { NSWorkspace.shared.openApplication(at: url, configuration: .init()) }
-        else if let website = URL(string: appModel.provider == .lmStudio ? "https://lmstudio.ai/download" : "https://ollama.com/download") { NSWorkspace.shared.open(website) }
+        return "\(request.item.name) (Q4_K_M)\n\(request.installedModelID)\n\n\(storage)\(active)\n\nYou can download \(request.item.tier) again from this card."
     }
 }

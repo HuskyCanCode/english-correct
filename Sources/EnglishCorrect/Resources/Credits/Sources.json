@@ -1,7 +1,7 @@
 {
   "manifest_version": 1,
   "retrieved_at_utc": "2026-09-26T21:01:15+00:00",
-  "scope": "Offline attribution for optional model downloads. English Correct invokes separately installed LM Studio or Ollama; model weights and those external runtimes are not bundled with the app.",
+  "scope": "Optional separately downloaded Qwen model weights and bundled llama.cpp local engine. Legacy LM Studio and Ollama runtimes are not bundled.",
   "license_integrity": "Each bundled license is an unmodified byte-for-byte copy fetched from its pinned official upstream revision. Size and Git blob SHA-1 were checked against the repository tree; SHA-256 is recorded for local verification.",
   "models": [
     {
@@ -94,5 +94,14 @@
       },
       "model_weights_bundled": false
     }
-  ]
+  ],
+  "engine": {
+    "name": "llama.cpp",
+    "version": "b11146",
+    "source": "https://github.com/ggml-org/llama.cpp/tree/b11146",
+    "archive_sha256": "1ad3f9eff80edb9dbef4259ad564d1720612ef7eea48fa4afed0e54f5f3d5711",
+    "license": "MIT",
+    "third_party_notices": "llama.cpp-THIRD-PARTY.txt",
+    "notice_provenance": "Output of the pinned official llama licenses command."
+  }
 }

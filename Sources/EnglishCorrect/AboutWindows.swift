@@ -133,7 +133,17 @@ private struct CreditsView: View {
                             }.font(.callout)
                         }.padding(20).contentSurface(cornerRadius: 18)
                     }
-                    Text("License copies are included in the app and can be read offline. Model files are downloaded separately through LM Studio or Ollama. Other models you choose have their own licenses.")
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Built-in engine · llama.cpp").font(.headline)
+                        Text("MIT License · upstream build b11146").font(.caption).foregroundStyle(.secondary)
+                        Link("Engine source ↗", destination: URL(string: "https://github.com/ggml-org/llama.cpp/tree/b11146")!)
+                        DisclosureGroup("Read engine and third-party licenses") {
+                            Text(["llama.cpp-LICENSE", "llama.cpp-THIRD-PARTY"].compactMap { CreditResources.licenseText(named: $0) }.joined(separator: "\n\n"))
+                                .font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }.padding(20).contentSurface(cornerRadius: 18)
+                    Text("License copies are included in the app and can be read offline. Model files are downloaded separately inside English Correct; older configurations may use LM Studio or Ollama. Other models you choose have their own licenses.")
                         .font(.caption).foregroundStyle(.secondary).lineSpacing(4)
                     Text("English Correct is independently developed and is not affiliated with or endorsed by the model creators.")
                         .font(.caption).foregroundStyle(.secondary).lineSpacing(4)

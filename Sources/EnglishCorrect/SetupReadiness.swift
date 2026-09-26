@@ -24,7 +24,7 @@ enum SetupReadiness {
     static let sample = "She don't like apples."
 
     static func containsSelectedModel(_ configuration: LocalAIConfiguration, in models: [String]) -> Bool {
-        if configuration.provider == .lmStudio { return models.contains(configuration.model) }
+        if configuration.provider != .ollama { return models.contains(configuration.model) }
         func canonical(_ name: String) -> String {
             let lastComponent = name.split(separator: "/").last ?? ""
             return lastComponent.contains(":") ? name : name + ":latest"

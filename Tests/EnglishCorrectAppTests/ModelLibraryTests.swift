@@ -3,6 +3,198 @@ import EnglishCorrectCore
 @testable import EnglishCorrect
 
 final class ModelLibraryTests: XCTestCase {
+    func testEmptyModelListEstablishesServerReadinessWithoutDownloadOrSelection() async throws {
+        try await Self.withLibrary { fixture in
+            XCTAssertFalse(fixture.library.serverReady)
+            XCTAssertNil(fixture.library.serverIssue)
+            XCTAssertTrue(fixture.backend.calls.isEmpty)
+            fixture.library.refresh()
+            XCTAssertFalse(fixture.library.serverReady)
+            try await Self.eventually { !fixture.library.checking }
+            XCTAssertTrue(fixture.library.serverReady, "A fresh server does not need a model before it can download one.")
+            XCTAssertNil(fixture.library.serverIssue)
+            XCTAssertTrue(fixture.library.installedIDs.isEmpty)
+            XCTAssertEqual(fixture.library.configuration.model, "current-model")
+            XCTAssertEqual(fixture.backend.calls, ["installed"])
+        }
+    }
+
+    func testFailedRefreshClearsStaleInventoryAndReportsNativeServerIssue() async throws {
+        for error in [ModelDownloadError.connectionFailed, .authenticationRequired, .endpointUnavailable, .timedOut] {
+            try await Self.withLibrary { fixture in
+                try await fixture.installFast()
+                XCTAssertTrue(fixture.library.serverReady)
+                fixture.backend.installedHandler = { _ in throw error }
+                fixture.library.refresh()
+                try await Self.eventually { !fixture.library.checking }
+                XCTAssertFalse(fixture.library.serverReady)
+                XCTAssertEqual(fixture.library.serverIssue, error)
+                XCTAssertTrue(fixture.library.installedIDs.isEmpty)
+                XCTAssertEqual(fixture.library.status, error.localizedDescription)
+                XCTAssertEqual(fixture.backend.calls, ["installed", "installed"])
+                XCTAssertEqual(fixture.library.configuration.model, "current-model")
+            }
+        }
+    }
+
+    func testDownloadPreflightBlocksUnavailableAuthenticatedAndUnsupportedServers() async throws {
+        let failures: [(LocalProvider, Error, ModelDownloadError)] = [
+            (.lmStudio, ModelDownloadError.connectionFailed, .connectionFailed),
+            (.lmStudio, ModelDownloadError.authenticationRequired, .authenticationRequired),
+            (.lmStudio, ModelDownloadError.endpointUnavailable, .endpointUnavailable),
+            (.ollama, LocalAIError.connectionFailed, .connectionFailed),
+            (.ollama, LocalAIError.serverError(401), .authenticationRequired),
+            (.ollama, LocalAIError.serverError(404), .endpointUnavailable)
+        ]
+        for (provider, failure, expected) in failures {
+            try await Self.withLibrary { fixture in
+                if provider == .ollama { fixture.library.configure(fixture.ollama) }
+                fixture.backend.installedHandler = { _ in throw failure }
+                fixture.library.download(fixture.fast)
+                try await Self.eventually { fixture.library.activeDownloadID == nil }
+                XCTAssertEqual(fixture.backend.calls, ["installed"], "A failed probe must not start or pull a model.")
+                XCTAssertFalse(fixture.library.serverReady)
+                XCTAssertEqual(fixture.library.serverIssue, expected)
+                XCTAssertEqual(fixture.library.cardMessages[fixture.fast.id], failure.localizedDescription)
+                XCTAssertTrue(fixture.library.savedJobs.isEmpty)
+                XCTAssertTrue(fixture.library.installedIDs.isEmpty)
+                XCTAssertEqual(fixture.library.configuration.model, "current-model")
+            }
+        }
+    }
+
+    func testServerRecoveryClearsIssueAndWaitsForExplicitDownload() async throws {
+        try await Self.withLibrary { fixture in
+            fixture.backend.installedHandler = { _ in throw ModelDownloadError.connectionFailed }
+            fixture.library.download(fixture.fast)
+            try await Self.eventually { fixture.library.activeDownloadID == nil }
+            fixture.backend.installedHandler = nil
+            fixture.library.refresh()
+            try await Self.eventually { !fixture.library.checking }
+            XCTAssertTrue(fixture.library.serverReady)
+            XCTAssertNil(fixture.library.serverIssue)
+            XCTAssertEqual(fixture.backend.calls, ["installed", "installed"], "Recovery must not retry a download on its own.")
+            fixture.backend.startHandler = { _, _ in
+                fixture.backend.installedResult = [fixture.lmFastID]
+                return fixture.complete()
+            }
+            fixture.library.download(fixture.fast)
+            try await Self.eventually { fixture.library.activeDownloadID == nil }
+            XCTAssertEqual(fixture.backend.calls, ["installed", "installed", "installed", "start", "installed"])
+            XCTAssertEqual(fixture.library.installedID(fixture.fast), fixture.lmFastID)
+            XCTAssertNil(fixture.library.serverIssue)
+        }
+    }
+
+    func testStoppedOrReconfiguredPreflightCannotStartDownloadOrRestoreReadiness() async throws {
+        for changeServer in [false, true] {
+            for lateFailure in [false, true] {
+                try await Self.withLibrary { fixture in
+                    let pending = LibrarySuspension<[String]>()
+                    fixture.backend.installedHandler = { _ in try await pending.wait() }
+                    fixture.library.download(fixture.fast)
+                    try await Self.eventually { pending.isWaiting }
+                    XCTAssertEqual(fixture.backend.calls, ["installed"])
+                    XCTAssertFalse(fixture.library.serverReady)
+                    if changeServer { fixture.library.configure(fixture.ollama) }
+                    else { fixture.library.stopChecking() }
+                    let message = fixture.library.cardMessages[fixture.fast.id]
+                    if lateFailure { pending.fail(ModelDownloadError.authenticationRequired) }
+                    else { pending.succeed([fixture.lmFastID]) }
+                    try await Self.eventually { fixture.backend.completedInstalled == 1 }
+                    await Task.yield()
+                    XCTAssertEqual(fixture.backend.calls, ["installed"])
+                    XCTAssertFalse(fixture.library.serverReady)
+                    XCTAssertNil(fixture.library.serverIssue)
+                    XCTAssertTrue(fixture.library.installedIDs.isEmpty)
+                    XCTAssertNil(fixture.library.activeDownloadID)
+                    XCTAssertEqual(fixture.library.cardMessages[fixture.fast.id], message)
+                }
+            }
+        }
+    }
+
+    func testDownloadStartPollAndUseFailuresInvalidateServerReadiness() async throws {
+        for operation in ["start", "poll", "prepare"] {
+            try await Self.withLibrary { fixture in
+                try await fixture.installFast()
+                switch operation {
+                case "start":
+                    fixture.backend.startHandler = { _, _ in throw ModelDownloadError.authenticationRequired }
+                    fixture.library.download(fixture.fast)
+                case "poll":
+                    fixture.backend.startResult = DownloadUpdate(progress: ModelDownloadProgress(status: "Downloading"), jobID: "pending-job")
+                    fixture.backend.pollHandler = { _, _ in throw ModelDownloadError.authenticationRequired }
+                    fixture.library.download(fixture.fast)
+                default:
+                    fixture.backend.prepareHandler = { _, _ in throw ModelDownloadError.authenticationRequired }
+                    fixture.library.use(fixture.fast) { _ in XCTFail("A failed load must not select a model.") }
+                }
+                try await Self.eventually { !fixture.library.isBusy }
+                XCTAssertFalse(fixture.library.serverReady)
+                XCTAssertEqual(fixture.library.serverIssue, .authenticationRequired)
+                XCTAssertEqual(fixture.library.configuration.model, "current-model")
+                XCTAssertEqual(fixture.library.cardMessages[fixture.fast.id], ModelDownloadError.authenticationRequired.localizedDescription)
+            }
+        }
+    }
+
+    func testLateRefreshCannotRestoreReadinessAfterAUseFailure() async throws {
+        try await Self.withLibrary { fixture in
+            try await fixture.installFast()
+            let pending = LibrarySuspension<[String]>()
+            fixture.backend.installedHandler = { _ in try await pending.wait() }
+            fixture.library.refresh()
+            try await Self.eventually { pending.isWaiting }
+            fixture.backend.prepareHandler = { _, _ in throw ModelDownloadError.connectionFailed }
+            fixture.library.use(fixture.fast) { _ in XCTFail("A failed load must not select a model.") }
+            try await Self.eventually { fixture.library.preparingID == nil }
+            pending.succeed([fixture.lmFastID])
+            try await Self.eventually { fixture.backend.completedInstalled == 2 }
+            await Task.yield()
+            XCTAssertFalse(fixture.library.serverReady)
+            XCTAssertFalse(fixture.library.checking)
+            XCTAssertEqual(fixture.library.serverIssue, .connectionFailed)
+        }
+    }
+
+    func testServerChangeRejectsOldRefreshFailureAfterNewServerIsReady() async throws {
+        try await Self.withLibrary { fixture in
+            let pending = LibrarySuspension<[String]>()
+            fixture.backend.installedHandler = { config in
+                if config.provider == .lmStudio { return try await pending.wait() }
+                return []
+            }
+            fixture.library.refresh()
+            try await Self.eventually { pending.isWaiting }
+            fixture.library.configure(fixture.ollama)
+            XCTAssertFalse(fixture.library.serverReady)
+            XCTAssertNil(fixture.library.serverIssue)
+            fixture.library.refresh()
+            try await Self.eventually { !fixture.library.checking }
+            XCTAssertTrue(fixture.library.serverReady)
+            pending.fail(ModelDownloadError.endpointUnavailable)
+            try await Self.eventually { fixture.backend.completedInstalled == 2 }
+            await Task.yield()
+            XCTAssertTrue(fixture.library.serverReady)
+            XCTAssertNil(fixture.library.serverIssue)
+            XCTAssertTrue(fixture.library.installedIDs.isEmpty)
+            XCTAssertTrue(fixture.library.status.contains("Ollama"))
+        }
+    }
+
+    func testCompletedTransferWithEmptyInventoryDoesNotClaimModelIsReady() async throws {
+        try await Self.withLibrary { fixture in
+            fixture.library.download(fixture.fast)
+            try await Self.eventually { fixture.library.activeDownloadID == nil }
+            XCTAssertTrue(fixture.library.serverReady, "The server is reachable even though its model is not ready.")
+            XCTAssertNil(fixture.library.installedID(fixture.fast))
+            XCTAssertTrue(fixture.library.status.contains("not listed yet"))
+            XCTAssertFalse(fixture.library.status.contains("download is complete"))
+            XCTAssertTrue(fixture.backend.preparedIDs.isEmpty)
+        }
+    }
+
     func testConfigurationAndRefreshNeverDownloadOrSelectAModel() async throws {
         try await Self.withLibrary { fixture in
             let library = fixture.library
@@ -62,6 +254,8 @@ final class ModelLibraryTests: XCTestCase {
             XCTAssertTrue(selected.isEmpty)
             XCTAssertEqual(fixture.library.cardMessages[fixture.fast.id], ModelDownloadError.insufficientStorage.localizedDescription)
             XCTAssertEqual(fixture.library.configuration.model, "current-model")
+            XCTAssertTrue(fixture.library.serverReady, "A model-specific storage failure does not make the server unavailable.")
+            XCTAssertNil(fixture.library.serverIssue)
         }
     }
 
@@ -113,7 +307,7 @@ final class ModelLibraryTests: XCTestCase {
             fixture.library.download(fixture.fast)
             try await Self.eventually { fixture.library.activeDownloadID == nil }
 
-            XCTAssertEqual(fixture.backend.calls, ["start", "installed"])
+            XCTAssertEqual(fixture.backend.calls, ["installed", "start", "installed"])
             XCTAssertEqual(fixture.library.configuration.model, "current-model")
             XCTAssertEqual(fixture.library.installedID(fixture.fast), fixture.lmFastID)
             XCTAssertEqual(fixture.library.cardMessages[fixture.fast.id], "Downloaded. Choose Use Fast when you’re ready.")
@@ -149,7 +343,7 @@ final class ModelLibraryTests: XCTestCase {
                 fixture.library.download(fixture.fast)
                 try await Self.eventually { fixture.library.activeDownloadID == nil }
 
-                XCTAssertEqual(fixture.backend.calls, ["pull"])
+                XCTAssertEqual(fixture.backend.calls, ["installed", "pull"])
                 XCTAssertEqual(fixture.library.cardMessages[fixture.fast.id], error.localizedDescription)
                 XCTAssertEqual(fixture.library.progress[fixture.fast.id]?.fraction, 0.4)
                 XCTAssertNil(fixture.library.installedID(fixture.fast))
@@ -178,8 +372,8 @@ final class ModelLibraryTests: XCTestCase {
             XCTAssertNil(fixture.library.activeDownloadID)
             XCTAssertNil(fixture.library.progress[fixture.fast.id])
             XCTAssertEqual(fixture.library.cardMessages[fixture.fast.id], stoppedMessage)
-            XCTAssertEqual(fixture.backend.calls, ["pull"])
-            XCTAssertTrue(stoppedMessage?.contains("connection closed") == true)
+            XCTAssertEqual(fixture.backend.calls, ["installed", "pull"])
+            XCTAssertTrue(stoppedMessage?.contains("stopped") == true)
         }
     }
 
@@ -228,7 +422,7 @@ final class ModelLibraryTests: XCTestCase {
             XCTAssertNil(fixture.library.activeDownloadID)
             XCTAssertEqual(fixture.library.savedJob(fixture.fast)?.jobID, "late-job")
             XCTAssertEqual(fixture.library.cardMessages[fixture.fast.id], stoppedMessage)
-            XCTAssertEqual(fixture.backend.calls, ["start"])
+            XCTAssertEqual(fixture.backend.calls, ["installed", "start"])
         }
     }
 
@@ -252,7 +446,7 @@ final class ModelLibraryTests: XCTestCase {
             try await Self.eventually { fixture.backend.completedStarts == 2 }
             await Task.yield()
             XCTAssertEqual(fixture.library.savedJob(fixture.fast)?.jobID, "new-job")
-            XCTAssertEqual(fixture.backend.calls, ["start", "start"])
+            XCTAssertEqual(fixture.backend.calls, ["installed", "start", "installed", "start"])
         }
     }
 
@@ -262,7 +456,7 @@ final class ModelLibraryTests: XCTestCase {
             fixture.backend.pollHandler = { _, _ in throw ModelDownloadError.connectionFailed }
             fixture.library.download(fixture.fast)
             try await Self.eventually { fixture.library.activeDownloadID == nil }
-            XCTAssertEqual(fixture.backend.calls, ["start", "poll"])
+            XCTAssertEqual(fixture.backend.calls, ["installed", "start", "poll"])
             XCTAssertEqual(fixture.library.savedJob(fixture.fast)?.jobID, "retry-job")
             XCTAssertEqual(fixture.library.cardMessages[fixture.fast.id], ModelDownloadError.connectionFailed.localizedDescription)
             XCTAssertNil(fixture.library.installedID(fixture.fast))
@@ -274,7 +468,7 @@ final class ModelLibraryTests: XCTestCase {
             fixture.backend.startResult = DownloadUpdate(progress: ModelDownloadProgress(status: "Downloading"))
             fixture.library.download(fixture.fast)
             try await Self.eventually { fixture.library.activeDownloadID == nil }
-            XCTAssertEqual(fixture.backend.calls, ["start"])
+            XCTAssertEqual(fixture.backend.calls, ["installed", "start"])
             XCTAssertTrue(fixture.library.cardMessages[fixture.fast.id]?.contains("did not return a download job") == true)
             XCTAssertTrue(fixture.library.savedJobs.isEmpty)
         }
@@ -316,7 +510,7 @@ final class ModelLibraryTests: XCTestCase {
             pending.succeed(fixture.complete(jobID: "original-server-job"))
             try await Self.eventually { !fixture.library.savedJobs.isEmpty }
 
-            XCTAssertEqual(fixture.backend.calls, ["start"])
+            XCTAssertEqual(fixture.backend.calls, ["installed", "start"])
             XCTAssertTrue(fixture.library.installedIDs.isEmpty)
             XCTAssertTrue(fixture.library.cardMessages.isEmpty)
             XCTAssertNil(fixture.library.activeDownloadID)
@@ -342,7 +536,7 @@ final class ModelLibraryTests: XCTestCase {
             XCTAssertEqual(fixture.library.installedID(fixture.fast), fixture.lmFastID)
 
             oldRefresh.succeed([])
-            try await Self.eventually { fixture.backend.completedInstalled == 2 }
+            try await Self.eventually { fixture.backend.completedInstalled == 3 }
             await Task.yield()
             XCTAssertEqual(fixture.library.installedID(fixture.fast), fixture.lmFastID)
             XCTAssertFalse(fixture.library.checking)
@@ -363,7 +557,7 @@ final class ModelLibraryTests: XCTestCase {
             try await Self.eventually { fixture.library.activeDownloadID == nil }
             XCTAssertEqual(fixture.library.installedID(fixture.fast), fixture.lmFastID)
             XCTAssertEqual(fixture.library.configuration.model, "new-manual-choice")
-            XCTAssertEqual(fixture.backend.calls, ["start", "installed"])
+            XCTAssertEqual(fixture.backend.calls, ["installed", "start", "installed"])
         }
     }
 
@@ -377,7 +571,7 @@ final class ModelLibraryTests: XCTestCase {
             fixture.library.use(fixture.fast) { _ in XCTFail("Use must be blocked during download") }
             fixture.library.refresh()
             try await Self.eventually { pendingDownload.isWaiting }
-            XCTAssertEqual(fixture.backend.calls, ["installed", "start"])
+            XCTAssertEqual(fixture.backend.calls, ["installed", "installed", "start"])
             XCTAssertEqual(fixture.library.activeDownloadID, fixture.fast.id)
             pendingDownload.succeed(fixture.complete())
             try await Self.eventually { fixture.library.activeDownloadID == nil }
@@ -390,7 +584,7 @@ final class ModelLibraryTests: XCTestCase {
             fixture.library.use(fixture.fast) { _ in XCTFail("Second Use must be blocked") }
             fixture.library.refresh()
             try await Self.eventually { pendingPreparation.isWaiting }
-            XCTAssertEqual(fixture.backend.calls, ["installed", "start", "installed", "prepare"])
+            XCTAssertEqual(fixture.backend.calls, ["installed", "installed", "start", "installed", "prepare"])
             pendingPreparation.succeed("ready-instance")
             try await Self.eventually { fixture.library.preparingID == nil }
             XCTAssertEqual(selections, 1)
@@ -468,7 +662,7 @@ final class ModelLibraryTests: XCTestCase {
             try await Self.eventually { fixture.library.activeDownloadID == nil }
             XCTAssertEqual(fixture.library.installedID(fixture.fast), fixture.lmFastID)
             XCTAssertTrue(fixture.library.savedJobs.isEmpty)
-            XCTAssertEqual(fixture.backend.calls, ["start", "installed", "delete", "installed", "start", "installed"])
+            XCTAssertEqual(fixture.backend.calls, ["installed", "start", "installed", "delete", "installed", "installed", "start", "installed"])
             XCTAssertEqual(fixture.library.cardMessages[fixture.fast.id], "Downloaded. Choose Use Fast when you’re ready.")
         }
     }
@@ -514,7 +708,7 @@ final class ModelLibraryTests: XCTestCase {
             try await Self.eventually { fixture.library.activeDownloadID == nil }
             XCTAssertEqual(fixture.library.installedID(fixture.fast), exactID)
             XCTAssertEqual(fixture.backend.deletedIDs, [exactID])
-            XCTAssertEqual(fixture.backend.calls, ["installed", "delete", "installed", "pull", "installed"])
+            XCTAssertEqual(fixture.backend.calls, ["installed", "delete", "installed", "installed", "pull", "installed"])
         }
     }
 
@@ -755,6 +949,7 @@ final class ModelLibraryTests: XCTestCase {
     }
 }
 
+
 private enum LibraryTestFailure: Error { case timeout }
 
 /// Explicit continuations exercise stale responses even when a backend ignores cancellation.
@@ -764,6 +959,11 @@ private final class LibrarySuspension<Value> {
     var isWaiting: Bool { continuation != nil }
     func wait() async throws -> Value {
         try await withCheckedThrowingContinuation { continuation = $0 }
+    }
+    func fail(_ error: Error) {
+        let pending = continuation
+        continuation = nil
+        pending?.resume(throwing: error)
     }
     func succeed(_ value: Value) {
         let pending = continuation

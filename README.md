@@ -2,9 +2,9 @@
 
 A native macOS writing assistant that checks English with a local AI model. Check a draft inside the app, or request a suggestion in another app you explicitly allow. You review every change before applying it.
 
-**[Download English Correct 1.6.0 for Mac](https://github.com/HuskyCanCode/english-correct/releases/download/v1.6.0/English-Correct-1.6.0-arm64.dmg)** · [Release notes and checksums](https://github.com/HuskyCanCode/english-correct/releases/tag/v1.6.0)
+**[Download English Correct 1.7.0 for Mac](https://github.com/HuskyCanCode/english-correct/releases/download/v1.7.0/English-Correct-1.7.0-arm64.dmg)** · [Release notes and checksums](https://github.com/HuskyCanCode/english-correct/releases/tag/v1.7.0)
 
-Apple Silicon (M-series) · macOS 14+ · No Xcode needed to install. LM Studio and model weights are separate downloads. This repository is private; sign in to a GitHub account with repository access to download.
+Apple Silicon (M-series) · macOS 14+ · No Xcode needed to install. The installer is about **13 MB**, including the local AI engine. Fast and Pro model files download separately inside the app.
 
 ![Write screen reviewing a local AI correction with changed words highlighted](docs/images/write.png)
 
@@ -16,39 +16,36 @@ Apple Silicon (M-series) · macOS 14+ · No Xcode needed to install. LM Studio a
 
 ### What you need
 
-- **An Apple Silicon Mac running macOS 14 or later** for the LM Studio setup below. LM Studio recommends 16 GB of memory; smaller models can run on 8 GB Macs. Its current macOS release does not support Intel Macs. [LM Studio requirements](https://lmstudio.ai/docs/app/system-requirements).
-- **[LM Studio 0.4 or later](https://lmstudio.ai/download)** to run and manage the local model. Version 0.4 introduced the model-management APIs used here. [LM Studio API overview](https://lmstudio.ai/docs/developer/rest).
-- Access to this GitHub repository, an internet connection for the initial downloads, and enough disk space for a model. There is no subscription for the Fast or Pro presets.
+- **An Apple Silicon Mac running macOS 14 or later.** Fast is recommended for Macs with 8 GB of memory; Pro is recommended for 16 GB or more.
+- Internet for the initial model download, and about 1.12 GB free space for Fast or 4.68 GB for Pro (plus temporary download space).
+- **No LM Studio, Ollama, Xcode, or separate server setup is needed.** The app includes a pinned llama.cpp engine and starts it automatically.
 
-New installations use LM Studio at `http://127.0.0.1:1234`. Existing Ollama or other saved local endpoint settings are preserved, but this version has no provider switch or manual connection-settings screen.
+Models are downloaded from the official Qwen repositories and verified against pinned file hashes before use. After downloading, corrections run locally without internet.
 
 ### 1. Download, install, and open
 
-1. [Download the 1.6.0 disk image](https://github.com/HuskyCanCode/english-correct/releases/download/v1.6.0/English-Correct-1.6.0-arm64.dmg). On the release page, choose **English-Correct-1.6.0-arm64.dmg** under Assets; the source-code archives are for developers.
+1. [Download the 1.7.0 disk image](https://github.com/HuskyCanCode/english-correct/releases/download/v1.7.0/English-Correct-1.7.0-arm64.dmg). On the release page, choose **English-Correct-1.7.0-arm64.dmg** under Assets; the source-code archives are for developers.
 2. Open the downloaded `.dmg` and drag **English Correct.app** onto the **Applications** folder shortcut. If updating, quit the old app first and replace the installed copy.
 3. Eject the disk image, then open **English Correct** from Applications. Keep it in that location before granting Accessibility access.
-4. Start LM Studio and complete the setup below. The small app download does not include the local AI runtime or the larger model files.
+4. In Setup, open Models to download Fast or Pro. The engine is included; model files are downloaded separately.
 
 **First-launch notice:** this release is signed with an Apple Development certificate and is **not Apple-notarized**. macOS may block it. If you trust this download, follow [Apple's instructions for opening an app that has not been notarized](https://support.apple.com/en-us/102445): after trying to open it, look in **System Settings → Privacy & Security** for **Open Anyway** and confirm the app-specific prompt. Managed Macs may not permit this. Do not disable Gatekeeper globally.
 
-The release also includes `SHA256SUMS.txt` for checking the downloaded package. If the download link shows 404, sign in with an account that has access to this private repository.
+The release also includes `SHA256SUMS.txt` for checking the downloaded package.
 
 **Setup** opens automatically on the first launch. Later launches open **Write**; you can always return to Setup from the sidebar or **English Correct → Setup Guide…**. Closing the window keeps the menu-bar app running. Choose **Quit** to stop it.
 
-### 2. Start LM Studio's local server
+### 2. Use the built-in engine
 
-1. Install and open LM Studio.
-2. Open its **Developer** tab. If it is hidden, enable Developer mode in **Settings → Developer**. [Developer mode guide](https://lmstudio.ai/docs/app/user-interface/modes).
-3. Start the server using the **Start server** switch. The default port is **1234**. [Local server guide](https://lmstudio.ai/docs/developer/core/server) · [Default address](https://lmstudio.ai/docs/developer/rest/quickstart).
-4. In LM Studio's server settings, use port **1234** and keep **Serve on Local Network** off. English Correct does not support API tokens, so it requires a local server with **Require Authentication** off. If your server must require authentication, this version cannot connect to it. [Server settings reference](https://lmstudio.ai/docs/developer/core/server/settings).
+New installations use **Built-in AI** automatically. No connection settings are needed. The app loads the model when you choose **Use Fast** or **Use Pro**, and stops its engine when you quit.
 
-Keep LM Studio and its server running while checking writing. You can download the model from English Correct in the next step.
+Upgrading from an older version with a selected LM Studio or Ollama model preserves that selection. To remove the external-app dependency, choose **Use built-in AI instead** in Setup or Models, then download Fast or Pro. Existing model files in other apps are not moved or deleted.
 
 ### 3. Download and select a model
 
 In English Correct, open **Models**. Start with **Fast** if you are unsure.
 
-| Preset | Model | LM Studio download | Memory guidance |
+| Preset | Model | Model download | Memory guidance |
 | --- | --- | --- | --- |
 | **Fast** | Qwen2.5 1.5B Instruct, Q4_K_M | About 1.12 GB | 8 GB+ |
 | **Pro** | Qwen2.5 7B Instruct, Q4_K_M | About 4.68 GB | 16 GB+ |
@@ -59,7 +56,7 @@ In English Correct, open **Models**. Start with **Fast** if you are unsure.
 
 ![Models screen with Fast and Pro local model cards](docs/images/models.png)
 
-*This example has both models downloaded and Fast selected. A new installation shows Download buttons instead.*
+*This example has both models downloaded and Fast selected. A new installation shows Download buttons instead. These screenshots show the earlier layout; version 1.7 adds the built-in AI setup card.*
 
 Sizes are approximate. Memory figures are app guidance, not vendor minimums; speed and quality depend on hardware and text. Both models use Apache 2.0. Pro is a larger local model, not a paid tier.
 
@@ -90,7 +87,7 @@ Automatic suggestions start **paused on every launch**. Enable them again in Set
 
 Choose **Enable open at login** when asked, or **Not now** to dismiss the question. You can change this later in **Setup → Open at login**. If macOS requires approval, use **Open Login Items** to finish in System Settings.
 
-Opening at login does not grant app access, start LM Studio, or enable automatic suggestions. Keep the local AI server available separately.
+Opening at login does not grant app access or enable automatic suggestions. The built-in engine starts when the selected model is checked.
 
 ## How to use
 
@@ -103,7 +100,7 @@ Opening at login does not grant app access, start LM Studio, or enable automatic
 
 ### Check writing in an allowed app
 
-1. Keep English Correct and the local AI server running.
+1. Keep English Correct running. Its built-in engine starts automatically when needed.
 2. Click an editable input in an app you have allowed.
 3. **Select a sentence or passage** to check only that text. With nothing selected, the whole input is checked.
 4. Press **⌥⌘E (Option–Command–E)**.
@@ -119,9 +116,13 @@ With automatic suggestions enabled, the app checks the focused field after about
 
 | What you see | What to try |
 | --- | --- |
-| Download link shows 404 | Sign in to GitHub with an account that has access to this private repository. |
+| Download link shows 404 | Open the Releases page and choose the latest DMG asset. |
 | macOS blocks the first launch | This development build is not notarized. Read the first-launch notice above and Apple's linked guidance. |
-| Local model **Needs attention**, or connection failed | Start LM Studio's local server on port 1234. Confirm it is version 0.4+, then choose Models → Refresh, Use Fast/Pro, and Setup → Check setup. Authentication-protected servers are unsupported. |
+| Download is stuck on an older release asking for LM Studio | Install version 1.7.0, then choose **Use built-in AI instead** if shown. No separate AI app is needed. |
+| Built-in engine is missing | Install the complete app from the DMG; a bare source/debug executable does not include the engine. |
+| A model cannot start | Close memory-heavy apps and try Fast. Download/select a model, then use Setup → Check setup. |
+| Download failed or was stopped | Check internet and free space, then choose Download again. Completed verified model files are reused; an interrupted file downloads again. |
+| Legacy LM Studio connection failed | Switch to Built-in AI, or install LM Studio 0.4+, start its local server, and choose Check connection. |
 | Download finished, but writing is not ready | Choose Refresh, then Use Fast/Pro. Wait for the automatic sample check to reach Ready. Download completion alone does not select a model. |
 | An app is missing from App access | Open that app, then choose Refresh apps. |
 | Shortcut gives permission guidance | Verify both the macOS Accessibility switch and the app's own switch in App access. Reopen the installed English Correct copy if macOS requests it. |
@@ -137,7 +138,7 @@ With automatic suggestions enabled, the app checks the focused field after about
 - **Two approvals before another app's text is read:** macOS Accessibility access and that app's opt-in. Automatic monitoring also needs its own master switch.
 - Only the foreground app's focused, supported text field is considered. Password fields are skipped. A browser approval applies across that browser's websites; there are no per-site permissions.
 - With a selection, only the selected text is sent to the local model. Otherwise the whole input is sent. Fields that cannot reliably report their selection are skipped.
-- Correction requests use a loopback-only local connection. There is no cloud fallback, telemetry, keystroke recording, clipboard polling, or saved draft history. Copy writes to the clipboard only when clicked. The model server may have its own logging settings.
+- The bundled engine listens only on loopback with a fresh authentication key for each launch; its web interface and prompt logs are disabled. Correction requests use a loopback-only local connection. There is no cloud fallback, telemetry, keystroke recording, clipboard polling, or saved draft history. Copy writes to the clipboard only when clicked. Legacy external model servers may have their own logging settings.
 - Download requests send public model identifiers, not your writing. Initial model downloads require internet access; inference uses the downloaded model locally.
 - The app saves setup/launch choices, app permissions, local AI configuration, selected model identifiers, and download-job metadata. Text and suggestions stay in memory. Opening at login is a separate, explicit choice.
 - Apply rechecks permissions, app, field, selection, and exact original text before writing, then verifies the result. **Suggestions never apply automatically.**
@@ -150,7 +151,7 @@ A correction is limited to **4,000 characters / 32,000 UTF-8 bytes**. A shorter 
 
 On macOS 26+, the app uses native Liquid Glass. On macOS 14 and 15 it uses standard materials and bordered controls. Light/dark appearance, Reduce Transparency, and Increase Contrast have matching styles. Screenshots show one appearance; controls may look different on your Mac.
 
-Review all revisions: local model output can be incorrect. Fast has been tested with live LM Studio download and inference. Pro and Ollama have automated protocol tests, but a Pro download and live Ollama integration have not been verified. Real cross-app replacement through the live OS UI also remains unverified; see the full [verification scope and limitations](TEST-RESULTS.md).
+Review all revisions: local model output can be incorrect. Fast has been tested with live download and inference. Pro and Ollama have automated protocol tests, but a Pro download and live Ollama integration have not been verified. Real cross-app replacement through the live OS UI also remains unverified; see the full [verification scope and limitations](TEST-RESULTS.md).
 
 <details>
 <summary>Model downloads, removal, and existing Ollama configurations</summary>
@@ -158,11 +159,11 @@ Review all revisions: local model output can be incorrect. Fast has been tested 
 Downloads never start automatically and do not change the active model. Use Fast/Pro explicitly loads and selects it. Existing selections are retained until changed.
 
 - In LM Studio, **Stop checking** stops only English Correct's progress display; the server may continue downloading. Pause/cancel the transfer in LM Studio. **Resume checking** resumes tracking the saved job.
-- A successful download is checked against the installed model list before it becomes selectable. Missing, older, or authentication-protected servers show an error.
+- A successful download is verified before it becomes selectable. Legacy external providers also require a compatible local server.
 - **Delete Fast… / Delete Pro…** asks for confirmation. LM Studio unloads exact model instances and moves the official Qwen Q4_K_M files to Trash; empty Trash later to reclaim space. Ambiguous, incomplete, symlinked, or other-publisher copies must be managed in LM Studio. Deleting an active model clears the writing selection. Cancel leaves it untouched, and a deleted preset can be downloaded again.
-- Model libraries are shared with other apps; deleting a model affects them too.
+- Legacy LM Studio/Ollama libraries are shared with other apps; deleting a model there affects them too. Built-in downloads are owned only by English Correct.
 
-Earlier saved Ollama configurations still work with the existing provider flow. Start Ollama before use. Ollama downloads are about 986 MB for Fast and 4.7 GB for Pro; Stop download closes the pull connection, and a retry may reuse cached partial files. Deletion unloads and deletes the exact installed tag, with shared layers possibly retained. This version has no in-app control for switching a new installation from LM Studio to Ollama.
+Earlier saved Ollama configurations still work with the existing provider flow. Start Ollama before use. Ollama downloads are about 986 MB for Fast and 4.7 GB for Pro; Stop download closes the pull connection, and a retry may reuse cached partial files. Deletion unloads and deletes the exact installed tag, with shared layers possibly retained. New installations use Built-in AI; there is no UI for adding a new external provider configuration.
 
 </details>
 
@@ -188,10 +189,10 @@ Open **English Correct → Credits & Licenses…**, or the same button in **Abou
 
 Building from source is optional. It requires **Xcode 26 or later**, or matching command-line tools with the macOS 26 SDK, for the native glass APIs. Install and open Xcode once, then select its command-line tools in **Xcode → Settings → Locations**. See [Apple's Xcode requirements](https://developer.apple.com/xcode/system-requirements) for the build host's required macOS version. The resulting app targets macOS 14 and later.
 
-Clone using authenticated SSH access to this repository. There are no third-party Swift package dependencies:
+Clone the repository. There are no third-party Swift package dependencies:
 
 ```sh
-git clone git@github.com:HuskyCanCode/english-correct.git
+git clone https://github.com/HuskyCanCode/english-correct.git
 cd english-correct
 swift test
 ./scripts/build-app.sh
@@ -236,3 +237,7 @@ Repeat with the browsers/editors you intend to use; their Accessibility implemen
 - [Ollama generation](https://docs.ollama.com/api/generate), [pull](https://docs.ollama.com/api/pull), and [delete](https://docs.ollama.com/api/delete)
 
 </details>
+
+### Built-in model storage and licenses
+
+Built-in downloads live in `~/Library/Application Support/English Correct/Models`. **Delete Fast/Pro** removes only that app-owned model, and **Download** installs it again. Model weights are not part of the DMG. The bundled llama.cpp engine is MIT-licensed; its license and upstream third-party notices are available offline in **Credits & Licenses**. The build script fetches the pinned official `b11146` Apple Silicon engine archive and verifies its SHA-256 before packaging.

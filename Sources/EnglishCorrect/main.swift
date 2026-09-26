@@ -69,7 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } catch { model.shortcutStatus = error.localizedDescription }
     }
     func applicationDidBecomeActive(_ notification: Notification) { loginItem.refresh() }
-    func applicationWillTerminate(_ notification: Notification) { globalShortcut.unregister() }
+    func applicationWillTerminate(_ notification: Notification) { BuiltInModelRuntime.shared.shutdown(); globalShortcut.unregister() }
     @objc func showWindow() { NSApplication.shared.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil) }
     @objc func showAbout() { aboutWindows.showAbout() }
     @objc func showSetup() { model.openSetup() }
@@ -78,7 +78,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 }
 
-if CommandLine.arguments.contains("--test-local-ai") {
+if CommandLine.arguments.contains("--test-builtin-ai") {
+    Task { @MainActor in
+        do {
+            guard let path = ProcessInfo.processInfo.environment["ENGLISH_CORRECT_TEST_MODEL_DIRECTORY"] else {
+                print("FAIL: provide an isolated test model directory"); exit(1)
+            }
+            let store = BuiltInModelStore(root: URL(fileURLWithPath: path).resolvingSymlinksInPath())
+            print("Downloading/verifying Fast using the built-in downloader…")
+            try await store.download("fast") { update in
+                // Test output contains only public download progress, never user text.
+                if update.status.contains("Verifying") { print(update.status) }
+            }
+            let url = try await store.modelURL(for: "fast")
+            let config = try await BuiltInModelRuntime.shared.ensureLoaded(modelID: "fast", modelURL: url)
+            let client = LocalAIClient(configuration: config)
+            let samples = ["She don't like apples.", "I has two book.", "We went to the park yesterday."]
+            for sample in samples {
+                let result = try await client.correct(sample)
+                print("INPUT: \(sample)\nOUTPUT: \(result.corrected)")
+                if sample == samples[0] { guard SetupReadiness.validates(result) else { throw LocalAIError.invalidResponse } }
+                if sample == samples[1] { guard result.corrected.contains("have") && result.corrected.contains("books") else { throw LocalAIError.invalidResponse } }
+                if sample == samples[2] { guard result.corrected == sample else { throw LocalAIError.invalidResponse } }
+            }
+            BuiltInModelRuntime.shared.shutdown()
+            print("PASS: built-in download, verification, engine startup, and 3 corrections; no external AI app used")
+            exit(0)
+        } catch { BuiltInModelRuntime.shared.shutdown(); print("FAIL: \(error.localizedDescription)"); exit(1) }
+    }
+    dispatchMain()
+} else if CommandLine.arguments.contains("--test-local-ai") {
     let provider: LocalProvider = CommandLine.arguments.contains("--ollama") ? .ollama : .lmStudio
     let baseURL = ProcessInfo.processInfo.environment["ENGLISH_CORRECT_TEST_URL"] ?? (provider == .lmStudio ? "http://127.0.0.1:1234" : "http://127.0.0.1:11434")
     let modelName = ProcessInfo.processInfo.environment["ENGLISH_CORRECT_TEST_MODEL"] ?? "english-correct-local"

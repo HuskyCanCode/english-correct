@@ -18,7 +18,7 @@ public struct RecommendedModel: Identifiable, Sendable {
     }
 
     public func downloadBytes(for provider: LocalProvider) -> Int64 {
-        provider == .lmStudio ? lmStudioBytes : ollamaBytes
+        provider != .ollama ? lmStudioBytes : ollamaBytes
     }
 
     /// Return the server's original identifier only for a recognized equivalent model.
@@ -26,6 +26,7 @@ public struct RecommendedModel: Identifiable, Sendable {
     /// for the recommended instruction model merely because its name contains ours.
     public func installedID(in identifiers: [String], provider: LocalProvider) -> String? {
         switch provider {
+        case .builtIn: return identifiers.first { $0 == id }
         case .ollama:
             let explicit = "qwen2.5:\(parameterSize)-instruct-q4_k_m"
             let aliases = [explicit, "qwen2.5:\(parameterSize)"]

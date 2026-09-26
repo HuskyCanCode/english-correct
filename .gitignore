@@ -18,3 +18,5 @@ xcuserdata/
 # Downloaded model weights are managed separately by the local AI runtime.
 *.gguf
 *.safetensors
+
+__pycache__/

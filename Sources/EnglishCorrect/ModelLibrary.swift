@@ -14,13 +14,30 @@ protocol ModelLibraryBackend {
 
 @MainActor
 private struct LocalModelLibraryBackend: ModelLibraryBackend {
-    func installed(_ config: LocalAIConfiguration) async throws -> [String] { try await ModelDownloadClient(configuration: config).installedModelIDs() }
+    func installed(_ config: LocalAIConfiguration) async throws -> [String] {
+        if config.provider == .builtIn { return try await BuiltInAI.models(config) }
+        return try await ModelDownloadClient(configuration: config).installedModelIDs()
+    }
     func start(_ spec: DownloadSpec, config: LocalAIConfiguration) async throws -> DownloadUpdate { try await ModelDownloadClient(configuration: config).startLMStudio(spec) }
     func poll(_ jobID: String, config: LocalAIConfiguration) async throws -> DownloadUpdate { try await ModelDownloadClient(configuration: config).pollLMStudio(jobID: jobID) }
-    func pull(_ spec: DownloadSpec, config: LocalAIConfiguration, progress: @escaping @Sendable (ModelDownloadProgress) async -> Void) async throws { try await ModelDownloadClient(configuration: config).pullOllama(spec, onProgress: progress) }
-    func prepare(_ id: String, config: LocalAIConfiguration) async throws -> String { try await ModelDownloadClient(configuration: config).prepareModel(id) }
+    func pull(_ spec: DownloadSpec, config: LocalAIConfiguration, progress: @escaping @Sendable (ModelDownloadProgress) async -> Void) async throws {
+        if config.provider == .builtIn { try await BuiltInModelStore.shared.download(spec.catalogID, progress: progress) }
+        else { try await ModelDownloadClient(configuration: config).pullOllama(spec, onProgress: progress) }
+    }
+    func prepare(_ id: String, config: LocalAIConfiguration) async throws -> String {
+        if config.provider == .builtIn {
+            let url = try await BuiltInModelStore.shared.modelURL(for: id)
+            _ = try await BuiltInModelRuntime.shared.ensureLoaded(modelID: id, modelURL: url)
+            return id
+        }
+        return try await ModelDownloadClient(configuration: config).prepareModel(id)
+    }
     func delete(_ id: String, spec: DownloadSpec, config: LocalAIConfiguration) async throws -> [String] {
-        if config.provider == .ollama {
+        if config.provider == .builtIn {
+            BuiltInModelRuntime.shared.shutdown()
+            try await BuiltInModelStore.shared.delete(id)
+            return [id]
+        } else if config.provider == .ollama {
             try await ModelDownloadClient(configuration: config).deleteOllamaModel(id)
             return [id]
         } else {
@@ -84,6 +101,8 @@ final class ModelLibrary: ObservableObject {
     @Published private(set) var pendingDeletion: ModelDeletionRequest?
     @Published private(set) var deletingID: String?
     @Published private(set) var checking = false
+    @Published private(set) var serverReady = false
+    @Published private(set) var serverIssue: ModelDownloadError?
     @Published private(set) var status = "Check your local server to see downloaded models."
     @Published private(set) var cardMessages: [String: String] = [:]
     @Published private(set) var progress: [String: ModelDownloadProgress] = [:]
@@ -133,6 +152,8 @@ final class ModelLibrary: ObservableObject {
         prepareTask?.cancel()
         preparingID = nil
         checking = false
+        serverReady = false
+        serverIssue = nil
         installedIDs = []
         cardMessages = [:]
         progress = [:]
@@ -150,15 +171,18 @@ final class ModelLibrary: ObservableObject {
         let token = UUID(); refreshEpoch = token
         let config = configuration
         checking = true
+        serverReady = false
+        serverIssue = nil
         status = "Checking downloaded models…"
         refreshTask = Task {
             do {
                 let ids = try await backend.installed(config)
                 guard !Task.isCancelled, refreshEpoch == token else { return }
-                installedIDs = ids
-                status = "Connected to \(config.provider.displayName). Downloads stay in its model library."
+                recordServerSuccess(ids)
+                status = config.provider == .builtIn ? "Built-in AI is ready. Models are stored on this Mac." : "Connected to \(config.provider.displayName). Downloads stay in its model library."
             } catch {
                 guard !Task.isCancelled, refreshEpoch == token else { return }
+                recordServerFailure(error, force: true, clearInstalled: true)
                 status = error.localizedDescription
             }
             checking = false
@@ -168,15 +192,27 @@ final class ModelLibrary: ObservableObject {
     func download(_ item: RecommendedModel) {
         guard !isBusy else { return }
         pendingDeletion = nil
+        invalidateRefresh()
+        serverReady = false
+        serverIssue = nil
         let config = configuration
         let token = UUID(); epoch = token
         activeDownloadID = item.id
         let startKey = config.provider.rawValue + "|" + config.baseURL + "|" + item.id
         startGenerations[startKey] = token
-        cardMessages[item.id] = "Starting download…"
+        cardMessages[item.id] = config.provider == .builtIn ? "Checking model storage…" : "Checking the local server…"
         progress[item.id] = nil
         downloadTask = Task {
+            var checkedServer = false
             do {
+                // The read-only native list works before any model is downloaded.
+                // It must succeed before a model download can be requested.
+                guard !Task.isCancelled, epoch == token else { return }
+                let ids = try await backend.installed(config)
+                guard !Task.isCancelled, epoch == token else { return }
+                recordServerSuccess(ids)
+                checkedServer = true
+                cardMessages[item.id] = "Starting download…"
                 if config.provider == .lmStudio {
                     let initial = try await backend.start(item.downloadSpec, config: config)
                     // Persist a server job even if the user stopped checking during this request.
@@ -192,6 +228,7 @@ final class ModelLibrary: ObservableObject {
                 try await finish(item, config: config, token: token)
             } catch {
                 guard !Task.isCancelled, epoch == token else { return }
+                recordServerFailure(error, force: !checkedServer, clearInstalled: !checkedServer)
                 cardMessages[item.id] = error.localizedDescription
             }
             if epoch == token { activeDownloadID = nil }
@@ -213,6 +250,7 @@ final class ModelLibrary: ObservableObject {
                 try await finish(item, config: config, token: token)
             } catch {
                 guard !Task.isCancelled, epoch == token else { return }
+                recordServerFailure(error)
                 cardMessages[item.id] = error.localizedDescription
             }
             if epoch == token { activeDownloadID = nil }
@@ -221,12 +259,12 @@ final class ModelLibrary: ObservableObject {
 
     func stopChecking() {
         if let id = activeDownloadID {
-            cardMessages[id] = configuration.provider == .lmStudio ? "Tracking stopped. LM Studio may continue downloading; manage or pause it there." : "Download connection closed. Choose Download to retry; Ollama can reuse partial files."
+            cardMessages[id] = configuration.provider == .lmStudio ? "Tracking stopped. LM Studio may continue downloading; manage or pause it there." : "Download stopped. Choose Download to retry; completed model files are kept."
         }
         epoch = UUID()
         // LM Studio jobs live in its server; let an in-flight start return its job ID.
         // Epoch checks prevent its late response from updating this page or continuing polling.
-        if configuration.provider == .ollama { downloadTask?.cancel() }
+        if configuration.provider != .lmStudio { downloadTask?.cancel() }
         downloadTask = nil
         activeDownloadID = nil
     }
@@ -250,6 +288,7 @@ final class ModelLibrary: ObservableObject {
                 cardMessages[item.id] = "\(item.tier) is ready for your writing."
             } catch {
                 guard !Task.isCancelled, prepareEpoch == token else { return }
+                recordServerFailure(error)
                 cardMessages[item.id] = error.localizedDescription
             }
             if prepareEpoch == token { preparingID = nil }
@@ -304,7 +343,10 @@ final class ModelLibrary: ObservableObject {
                 let verifiedAliases = try await backend.delete(request.installedModelID, spec: request.item.downloadSpec, config: config)
                 completedRequest = request.includingVerifiedAliases(verifiedAliases)
             } catch {
-                if isCurrentServer(request) { cardMessages[request.item.id] = error.localizedDescription }
+                if isCurrentServer(request) {
+                    recordServerFailure(error)
+                    cardMessages[request.item.id] = error.localizedDescription
+                }
                 return
             }
 
@@ -327,9 +369,10 @@ final class ModelLibrary: ObservableObject {
             do {
                 let ids = try await backend.installed(config)
                 guard isCurrentServer(request) else { return }
-                installedIDs = ids.filter { $0 != request.installedModelID }
+                recordServerSuccess(ids.filter { $0 != request.installedModelID })
             } catch {
                 guard isCurrentServer(request) else { return }
+                recordServerFailure(error, force: true, clearInstalled: true)
                 status = "\(request.item.tier) was deleted, but the model list could not refresh. Choose Refresh to check your server."
             }
         }
@@ -340,7 +383,7 @@ final class ModelLibrary: ObservableObject {
     }
 
     private func record(_ update: ModelDownloadProgress, itemID: String, token: UUID) {
-        guard epoch == token else { return }
+        guard epoch == token, activeDownloadID == itemID else { return }
         progress[itemID] = update
         cardMessages[itemID] = update.status
     }
@@ -369,9 +412,63 @@ final class ModelLibrary: ObservableObject {
         // Completion alone does not make a model selectable. Confirm that the provider lists it.
         let ids = try await backend.installed(config)
         guard !Task.isCancelled, epoch == token else { throw CancellationError() }
+        recordServerSuccess(ids)
+        let listed = installedID(item) != nil
+        cardMessages[item.id] = listed ? "Downloaded. Choose Use \(item.tier) when you’re ready." : "Download finished. Choose Refresh to check whether the model is ready to use."
+        status = listed ? "Your download is complete. Your active model has not changed." : "The server finished downloading, but the model is not listed yet. Choose Refresh to check again."
+    }
+
+    private func invalidateRefresh() {
+        refreshEpoch = UUID()
+        refreshTask?.cancel()
+        refreshTask = nil
+        checking = false
+    }
+
+    private func recordServerSuccess(_ ids: [String]) {
         installedIDs = ids
-        cardMessages[item.id] = installedID(item) == nil ? "Download finished. Choose Refresh to check whether the model is ready to use." : "Downloaded. Choose Use \(item.tier) when you’re ready."
-        status = "Your download is complete. Your active model has not changed."
+        serverReady = true
+        serverIssue = nil
+    }
+
+    private func recordServerFailure(_ error: Error, force: Bool = false, clearInstalled: Bool = false) {
+        let issue = Self.serverIssue(for: error)
+        guard force || issue != nil else { return }
+        // A discovery begun before the failed operation cannot restore readiness.
+        invalidateRefresh()
+        serverReady = false
+        serverIssue = issue ?? .invalidResponse
+        if clearInstalled { installedIDs = [] }
+        status = error.localizedDescription
+    }
+
+    private static func serverIssue(for error: Error) -> ModelDownloadError? {
+        if let issue = error as? ModelDownloadError {
+            switch issue {
+            case .authenticationRequired, .endpointUnavailable, .connectionFailed, .timedOut,
+                 .redirectBlocked, .serverError, .invalidResponse, .responseTooLong:
+                return issue
+            default: return nil
+            }
+        }
+        // Ollama discovery shares LocalAIClient rather than the native LM Studio parser.
+        if let issue = error as? LocalAIError {
+            switch issue {
+            case .connectionFailed: return .connectionFailed
+            case .timedOut: return .timedOut
+            case .redirectBlocked: return .redirectBlocked
+            case .serverError(let code):
+                switch code {
+                case 401, 403: return .authenticationRequired
+                case 404, 405, 501: return .endpointUnavailable
+                default: return .serverError(code)
+                }
+            case .invalidAddress: return .connectionFailed
+            case .invalidResponse: return .invalidResponse
+            default: return nil
+            }
+        }
+        return nil
     }
 
     private func saveJob(_ item: RecommendedModel, config: LocalAIConfiguration, jobID: String) {

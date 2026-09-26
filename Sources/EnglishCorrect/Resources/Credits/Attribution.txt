@@ -16,4 +16,6 @@ Offline license: Qwen2.5-7B-Instruct-LICENSE.txt
 
 The complete upstream license texts are included unchanged for offline reading. Neither official model repository contains a separate NOTICE file at the verified revisions. Sources.json records the exact revisions, original file locations, checksums, and repository file lists.
 
-English Correct connects to separately installed LM Studio or Ollama. Model weights and these external runtimes are not bundled with the app. The models are third-party works credited to their creators; their inclusion does not imply endorsement of English Correct.
+English Correct includes llama.cpp; legacy configurations may connect to separately installed LM Studio or Ollama. Model weights and these external runtimes are not bundled with the app. The models are third-party works credited to their creators; their inclusion does not imply endorsement of English Correct.
+
+Bundled local engine: llama.cpp b11146 (MIT). See llama.cpp-LICENSE.txt and llama.cpp-THIRD-PARTY.txt for offline license texts. Model weights remain separate downloads.

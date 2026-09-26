@@ -19,6 +19,17 @@ final class LocalAITests: XCTestCase {
         return try data(["choices": [["finish_reason": "stop", "message": ["content": content]]]])
     }
 
+    func testBuiltInRequestsUseEphemeralBearerAuthentication() async throws {
+        let config = LocalAIConfiguration(provider: .builtIn, baseURL: "http://127.0.0.1:54321", model: "fast", apiKey: "test-ephemeral-key")
+        let client = LocalAIClient(configuration: config, transport: { request in
+            XCTAssertEqual(request.url?.host, "127.0.0.1")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer test-ephemeral-key")
+            return (Data("{\"data\":[{\"id\":\"fast\"}]}".utf8), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        })
+        let models = try await client.models()
+        XCTAssertEqual(models, ["fast"])
+    }
+
     func testOnlyExplicitLoopbackHTTPAddressesAreAccepted() throws {
         for address in ["http://127.0.0.1:1234", "http://localhost:1234/", "http://[::1]:1234", "http://127.0.0.1:1234/v1/"] {
             let result = try LocalAIClient.endpoint(configuration(address: address), path: "/v1/models")
@@ -47,7 +58,7 @@ final class LocalAITests: XCTestCase {
             XCTAssertEqual(body["stream"] as? Bool, false)
             XCTAssertNil(body["tools"])
             let content: String
-            if provider == .lmStudio {
+            if provider != .ollama {
                 XCTAssertEqual(request.url?.path, "/v1/chat/completions")
                 let messages = try XCTUnwrap(body["messages"] as? [[String: String]])
                 XCTAssertEqual(messages.map { $0["role"]! }, ["system", "user"])

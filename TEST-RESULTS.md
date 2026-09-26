@@ -1,3 +1,14 @@
+# Version 1.7.0 built-in engine validation
+
+- The full automated suite executed 313 tests: 311 passed, two optional legacy live tests skipped, zero failures.
+- A clean, isolated model folder downloaded the official Fast GGUF through the production URLSession downloader and verified its pinned size and SHA-256. No LM Studio/Ollama API was used.
+- The packaged llama.cpp engine loaded that file and passed three real correction cases: agreement, agreement/plurals, and preservation of an already-correct sentence. Its child process exited after shutdown.
+- Fixture tests cover corrupted downloads, canceled transfers, partial Pro shards/retry, deletion/re-download, symlink rejection, fresh-install defaults, legacy selection preservation, bearer authentication, and loopback-only engine arguments. No user model was deleted.
+- The DMG passed integrity and mounted-app checks. Nested executable/library signatures passed strict verification; all runtime dependencies are bundled or macOS system libraries, and declared deployment targets are compatible with macOS 14.
+- The app includes the engine but not model weights. It remains Apple Development-signed and is not Apple-notarized. A separate clean Mac, real Pro inference, Intel, and older macOS versions have not been live-tested.
+
+The previous version's detailed checks and limitations follow.
+
 # Verification — version 1.6.0
 
 Recorded 26 September 2026. Validation environment: macOS 26.5.2 on Apple Silicon with Swift 6.3.3. The minimum deployment target is macOS 14; older macOS versions and Intel hardware have not been tested.

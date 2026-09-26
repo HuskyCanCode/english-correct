@@ -34,6 +34,10 @@ if [ -z "$SIGNING_IDENTITY" ]; then
         echo "Using ad-hoc signing ($IDENTITY_COUNT eligible identities); set ENGLISH_CORRECT_SIGNING_IDENTITY to choose one."
     fi
 fi
+python3 scripts/prepare-local-engine.py "$APP/Contents/Resources/LocalEngine"
+for engine_file in "$APP/Contents/Resources/LocalEngine/"*; do
+    codesign --force --sign "$SIGNING_IDENTITY" --timestamp=none "$engine_file"
+done
 codesign --force --sign "$SIGNING_IDENTITY" --identifier local.englishcorrect.app --timestamp=none "$APP"
 codesign --verify --strict "$APP"
 echo "Built: $APP"
