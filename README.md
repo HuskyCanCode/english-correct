@@ -2,6 +2,10 @@
 
 A native macOS writing assistant that checks English with a local AI model. Check a draft inside the app, or request a suggestion in another app you explicitly allow. You review every change before applying it.
 
+**[Download English Correct 1.6.0 for Mac](https://github.com/HuskyCanCode/english-correct/releases/download/v1.6.0/English-Correct-1.6.0-arm64.dmg)** · [Release notes and checksums](https://github.com/HuskyCanCode/english-correct/releases/tag/v1.6.0)
+
+Apple Silicon (M-series) · macOS 14+ · No Xcode needed to install. LM Studio and model weights are separate downloads. This repository is private; sign in to a GitHub account with repository access to download.
+
 ![Write screen reviewing a local AI correction with changed words highlighted](docs/images/write.png)
 
 *A sample correction in Write. The original draft stays unchanged until you choose Use suggestion.*
@@ -13,26 +17,21 @@ A native macOS writing assistant that checks English with a local AI model. Chec
 ### What you need
 
 - **An Apple Silicon Mac running macOS 14 or later** for the LM Studio setup below. LM Studio recommends 16 GB of memory; smaller models can run on 8 GB Macs. Its current macOS release does not support Intel Macs. [LM Studio requirements](https://lmstudio.ai/docs/app/system-requirements).
-- **Xcode 26 or later**, or matching command-line tools with the macOS 26 SDK, to build the app's native glass UI. The built app targets macOS 14 and later. Install and open Xcode once, then select its command-line tools in Xcode's Settings → Locations. Check [Apple's Xcode requirements](https://developer.apple.com/xcode/system-requirements) for the macOS version needed to build.
 - **[LM Studio 0.4 or later](https://lmstudio.ai/download)** to run and manage the local model. Version 0.4 introduced the model-management APIs used here. [LM Studio API overview](https://lmstudio.ai/docs/developer/rest).
 - Access to this GitHub repository, an internet connection for the initial downloads, and enough disk space for a model. There is no subscription for the Fast or Pro presets.
 
 New installations use LM Studio at `http://127.0.0.1:1234`. Existing Ollama or other saved local endpoint settings are preserved, but this version has no provider switch or manual connection-settings screen.
 
-### 1. Build, install, and open
+### 1. Download, install, and open
 
-Open Terminal and run these commands. They use SSH access to GitHub, build the app, copy it to your user Applications folder, and open that installed copy:
+1. [Download the 1.6.0 disk image](https://github.com/HuskyCanCode/english-correct/releases/download/v1.6.0/English-Correct-1.6.0-arm64.dmg). On the release page, choose **English-Correct-1.6.0-arm64.dmg** under Assets; the source-code archives are for developers.
+2. Open the downloaded `.dmg` and drag **English Correct.app** onto the **Applications** folder shortcut. If updating, quit the old app first and replace the installed copy.
+3. Eject the disk image, then open **English Correct** from Applications. Keep it in that location before granting Accessibility access.
+4. Start LM Studio and complete the setup below. The small app download does not include the local AI runtime or the larger model files.
 
-```sh
-git clone git@github.com:HuskyCanCode/english-correct.git
-cd english-correct
-./scripts/build-app.sh
-mkdir -p "$HOME/Applications"
-ditto "dist/English Correct.app" "$HOME/Applications/English Correct.app"
-open "$HOME/Applications/English Correct.app"
-```
+**First-launch notice:** this release is signed with an Apple Development certificate and is **not Apple-notarized**. macOS may block it. If you trust this download, follow [Apple's instructions for opening an app that has not been notarized](https://support.apple.com/en-us/102445): after trying to open it, look in **System Settings → Privacy & Security** for **Open Anyway** and confirm the app-specific prompt. Managed Macs may not permit this. Do not disable Gatekeeper globally.
 
-The build output is `dist/English Correct.app`. Keep the installed copy in a stable location before granting Accessibility access. This is a locally built app, not a notarized installer; see the signing notes below if rebuilding changes its permission status.
+The release also includes `SHA256SUMS.txt` for checking the downloaded package. If the download link shows 404, sign in with an account that has access to this private repository.
 
 **Setup** opens automatically on the first launch. Later launches open **Write**; you can always return to Setup from the sidebar or **English Correct → Setup Guide…**. Closing the window keeps the menu-bar app running. Choose **Quit** to stop it.
 
@@ -120,6 +119,8 @@ With automatic suggestions enabled, the app checks the focused field after about
 
 | What you see | What to try |
 | --- | --- |
+| Download link shows 404 | Sign in to GitHub with an account that has access to this private repository. |
+| macOS blocks the first launch | This development build is not notarized. Read the first-launch notice above and Apple's linked guidance. |
 | Local model **Needs attention**, or connection failed | Start LM Studio's local server on port 1234. Confirm it is version 0.4+, then choose Models → Refresh, Use Fast/Pro, and Setup → Check setup. Authentication-protected servers are unsupported. |
 | Download finished, but writing is not ready | Choose Refresh, then Use Fast/Pro. Wait for the automatic sample check to reach Ready. Download completion alone does not select a model. |
 | An app is missing from App access | Open that app, then choose Refresh apps. |
@@ -185,13 +186,19 @@ Open **English Correct → Credits & Licenses…**, or the same button in **Abou
 
 ## Build and test
 
-There are no third-party Swift package dependencies. From the repository directory:
+Building from source is optional. It requires **Xcode 26 or later**, or matching command-line tools with the macOS 26 SDK, for the native glass APIs. Install and open Xcode once, then select its command-line tools in **Xcode → Settings → Locations**. See [Apple's Xcode requirements](https://developer.apple.com/xcode/system-requirements) for the build host's required macOS version. The resulting app targets macOS 14 and later.
+
+Clone using authenticated SSH access to this repository. There are no third-party Swift package dependencies:
 
 ```sh
+git clone git@github.com:HuskyCanCode/english-correct.git
+cd english-correct
 swift test
 ./scripts/build-app.sh
 ./scripts/build-fixture.sh
 ```
+
+The built app is `dist/English Correct.app`. To install your own build, quit any running copy, copy it to Applications, and open it from there. To produce release packages, run `./scripts/package-release.sh`; generated disk images and checksums are written to `dist/releases/`.
 
 The deterministic tests use injected services and isolated preferences; they do not grant OS access or inspect personal writing. Optional live tests and recorded results are documented in [TEST-RESULTS.md](TEST-RESULTS.md).
 

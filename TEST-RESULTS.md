@@ -2,6 +2,13 @@
 
 Recorded 26 September 2026. Validation environment: macOS 26.5.2 on Apple Silicon with Swift 6.3.3. The minimum deployment target is macOS 14; older macOS versions and Intel hardware have not been tested.
 
+## Installable release package
+
+- Built `English-Correct-1.6.0-arm64.dmg` with the signed app, an Applications shortcut, and installation instructions. The package excludes model weights, AI runtimes, test fixtures, logs, and local preferences. `SHA256SUMS.txt` accompanies the download.
+- Disk-image verification and a read-only mount passed. The mounted app's signature, version 1.6.0/build 17, arm64 architecture, executable identity, Applications shortcut, and installation text were checked. All dynamic dependencies are macOS system libraries; the unused Xcode toolchain search path was removed before signing.
+- The mounted packaged executable passed all **three synthetic local-model correction checks** against LM Studio. This exercises startup after the release-linking change without replacing or launching another copy of the installed app. The full unit suite was not rerun for this packaging-only change; its recorded results remain below.
+- The app is Apple Development-signed and is **not notarized**. Gatekeeper rejected its normal assessment; the README and release notes explain first-launch requirements. No security protections were changed. Installation on a separate clean Mac remains unverified.
+
 ## Automated results
 
 - The latest full suite executed **292 tests: 290 passed, two opt-in live tests skipped, zero failures**.

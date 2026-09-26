@@ -1,10 +1,20 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-swift build -c release
+# Rely on the Swift runtime shipped with macOS, not this Mac's Xcode path.
+swift build -c release -Xswiftc -no-toolchain-stdlib-rpath
 APP="$PWD/dist/English Correct.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/EnglishCorrect "$APP/Contents/MacOS/EnglishCorrect"
+# SwiftPM may explicitly add its toolchain search path despite the driver flag.
+# Remove that unused development path from the copy before final signing.
+while IFS= read -r runtime_path; do
+    case "$runtime_path" in
+        */Toolchains/*.xctoolchain/usr/lib/swift*)
+            xcrun install_name_tool -delete_rpath "$runtime_path" "$APP/Contents/MacOS/EnglishCorrect"
+            ;;
+    esac
+done < <(otool -l "$APP/Contents/MacOS/EnglishCorrect" | awk '/cmd LC_RPATH/ { getline; getline; print $2 }')
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 test -s Sources/EnglishCorrect/Resources/Credits/Qwen2.5-1.5B-Instruct-LICENSE.txt
 test -s Sources/EnglishCorrect/Resources/Credits/Qwen2.5-7B-Instruct-LICENSE.txt
