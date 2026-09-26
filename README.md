@@ -1,134 +1,231 @@
 # English Correct
 
-A native macOS writing assistant with local AI, explicit per-app permissions, and suggestions you choose to apply. Requires macOS 14 or later and a local chat model in LM Studio or Ollama.
+A native macOS writing assistant that checks English with a local AI model. Check a draft inside the app, or request a suggestion in another app you explicitly allow. You review every change before applying it.
 
-## Run
+![Write screen reviewing a local AI correction with changed words highlighted](docs/images/write.png)
 
-From the repository directory, build the app and open it:
+*A sample correction in Write. The original draft stays unchanged until you choose Use suggestion.*
+
+[Get started](#get-started) · [How to use](#how-to-use) · [Troubleshooting](#troubleshooting) · [Privacy](#privacy-and-permissions) · [Tests](#build-and-test)
+
+## Get started
+
+### What you need
+
+- **An Apple Silicon Mac running macOS 14 or later** for the LM Studio setup below. LM Studio recommends 16 GB of memory; smaller models can run on 8 GB Macs. Its current macOS release does not support Intel Macs. [LM Studio requirements](https://lmstudio.ai/docs/app/system-requirements).
+- **Xcode 26 or later**, or matching command-line tools with the macOS 26 SDK, to build the app's native glass UI. The built app targets macOS 14 and later. Install and open Xcode once, then select its command-line tools in Xcode's Settings → Locations. Check [Apple's Xcode requirements](https://developer.apple.com/xcode/system-requirements) for the macOS version needed to build.
+- **[LM Studio 0.4 or later](https://lmstudio.ai/download)** to run and manage the local model. Version 0.4 introduced the model-management APIs used here. [LM Studio API overview](https://lmstudio.ai/docs/developer/rest).
+- Access to this GitHub repository, an internet connection for the initial downloads, and enough disk space for a model. There is no subscription for the Fast or Pro presets.
+
+New installations use LM Studio at `http://127.0.0.1:1234`. Existing Ollama or other saved local endpoint settings are preserved, but this version has no provider switch or manual connection-settings screen.
+
+### 1. Build, install, and open
+
+Open Terminal and run these commands. They use SSH access to GitHub, build the app, copy it to your user Applications folder, and open that installed copy:
 
 ```sh
+git clone git@github.com:HuskyCanCode/english-correct.git
+cd english-correct
 ./scripts/build-app.sh
-open "dist/English Correct.app"
+mkdir -p "$HOME/Applications"
+ditto "dist/English Correct.app" "$HOME/Applications/English Correct.app"
+open "$HOME/Applications/English Correct.app"
 ```
 
-A Swift toolchain is required. You can copy the resulting app to `~/Applications/English Correct.app` before granting Accessibility access; keep it in a stable location afterward. The app has a normal window and a menu-bar shortcut. Closing its window keeps the menu-bar app running; use Quit to exit. Automatic suggestions start paused on every launch. The global keyboard shortcut is available after setup checks pass.
+The build output is `dist/English Correct.app`. Keep the installed copy in a stable location before granting Accessibility access. This is a locally built app, not a notarized installer; see the signing notes below if rebuilding changes its permission status.
 
-1. Open **Setup**. The guide checks your selected local model using a fixed sample sentence, plus macOS Accessibility, your allowed apps, and shortcut registration. The checks also run on launch; no text is read from another app during setup verification.
-2. Start your configured local AI app (LM Studio by default, or an existing Ollama configuration). Open **Models**, download Fast or Pro, and choose **Use Fast / Use Pro**. The selected model is verified automatically after selection or connection changes. Setup shows **Checking…**, then **Ready** when its sample correction succeeds. **Check setup** can retry a failed check.
-3. For help in other apps, enable English Correct under macOS **Privacy & Security → Accessibility**, then choose individual apps in **App access**. The app cannot grant permission itself.
-4. Once all checks pass, choose **Use shortcut only** or **Enable automatic suggestions**. Automatic suggestions require this explicit choice (or the Write toggle) and start paused again on every launch. If you only need the writing area here, choose **Use only this app** after the model check passes; Accessibility is optional for that path.
-5. In an allowed app, click an input and press **⌥⌘E (Option–Command–E)**. Select a sentence first to check only that selection; with no selection, the entire input is checked. Review the result, then choose **Apply** or **Copy**.
+**Setup** opens automatically on the first launch. Later launches open **Write**; you can always return to Setup from the sidebar or **English Correct → Setup Guide…**. Closing the window keeps the menu-bar app running. Choose **Quit** to stop it.
 
-The guide opens automatically only on the first launch of a fresh installation. Returning users, including users upgrading from earlier versions, open directly to Write even if setup was left unfinished. The guide stays available in the sidebar and under **English Correct → Setup Guide…**. Readiness checks still run quietly on launch; a failed check shows guidance without opening the setup page. Model/server changes invalidate readiness, pause automatic suggestions, and automatically verify the new selection. Verification never enables automatic suggestions by itself. Losing required permission or the allowed-app selection also pauses monitoring. A successful setup check verifies a basic local correction; it cannot guarantee support for every app’s custom editor.
+### 2. Start LM Studio's local server
 
-The shortcut can be changed to **⌃⌥⌘E (Control–Option–Command–E)** in Write or App access if the default is already used by another app. Keep English Correct running. The shortcut shows permission, unsupported-field, local-model, and no-change feedback. Use **Check writing** for the draft inside English Correct itself.
+1. Install and open LM Studio.
+2. Open its **Developer** tab. If it is hidden, enable Developer mode in **Settings → Developer**. [Developer mode guide](https://lmstudio.ai/docs/app/user-interface/modes).
+3. Start the server using the **Start server** switch. The default port is **1234**. [Local server guide](https://lmstudio.ai/docs/developer/core/server) · [Default address](https://lmstudio.ai/docs/developer/rest/quickstart).
+4. In LM Studio's server settings, use port **1234** and keep **Serve on Local Network** off. English Correct does not support API tokens, so it requires a local server with **Require Authentication** off. If your server must require authentication, this version cannot connect to it. [Server settings reference](https://lmstudio.ai/docs/developer/core/server/settings).
 
-Changed and added words are highlighted in soft green and underlined in both the floating suggestion and the Write screen. Unchanged text stays plain. The before-and-after summary also identifies removed wording. Copy and Apply use the exact corrected text without highlighting or other added formatting.
+Keep LM Studio and its server running while checking writing. You can download the model from English Correct in the next step.
 
-Empty or whitespace-only inputs stay quiet, including when you press the shortcut: no review starts and no popup appears. Editing a manually checked input dismisses its old suggestion; clearing it cancels the review and keeps late results hidden. A selection containing only whitespace is also skipped.
+### 3. Download and select a model
 
-## Open at login
+In English Correct, open **Models**. Start with **Fast** if you are unsure.
 
-English Correct asks whether you want it to open when you sign in to your Mac. Choose **Enable open at login** to opt in or **Not now** to dismiss the question. You can change the choice later using **Setup → Open at login**; it is optional and does not block setup or model checks.
+| Preset | Model | LM Studio download | Memory guidance |
+| --- | --- | --- | --- |
+| **Fast** | Qwen2.5 1.5B Instruct, Q4_K_M | About 1.12 GB | 8 GB+ |
+| **Pro** | Qwen2.5 7B Instruct, Q4_K_M | About 4.68 GB | 16 GB+ |
 
-The app uses macOS Login Items and reads the actual system status. If macOS requires approval, choose **Open Login Items** to finish in System Settings, or cancel the request. Turning the option off removes English Correct from automatic startup. Changes made in System Settings are reflected when the app becomes active again.
+1. Choose **Download Fast** or **Download Pro** and wait for completion.
+2. If the card has not updated, choose **Refresh** to verify that the model is installed.
+3. Choose **Use Fast** or **Use Pro**. Downloading alone does not select the model. The selected card shows **ACTIVE** and **Using Fast / Using Pro**.
 
-Opening at login does not enable automatic suggestions or grant access to any apps. Suggestions still start paused, and your local AI runtime must be available for writing checks.
+![Models screen with Fast and Pro local model cards](docs/images/models.png)
 
-## Appearance
+*This example has both models downloaded and Fast selected. A new installation shows Download buttons instead.*
 
-Version 1.6.0 uses Apple's native Liquid Glass on macOS 26 or later for sidebar selection, main-window buttons, and the floating suggestion, with native vibrancy behind the main window. Large content cards share that backdrop through subtle translucent fills and borders, avoiding the bright white rims and stacked glass layers of version 1.4.0. Text and accent colors adapt to light and dark appearance. The suggestion keeps its measured text area, scrolling for long corrections, changed-word highlights, and reachable Copy/Apply buttons. These two popup actions use opaque colors to stay readable in a non-focused window: mint with dark green text for Copy and deep teal with white text for Apply in light mode, with corresponding dark-mode colors. They have larger targets and accessibility hints; Apply remains disabled for fields that do not support replacement.
+Sizes are approximate. Memory figures are app guidance, not vendor minimums; speed and quality depend on hardware and text. Both models use Apache 2.0. Pro is a larger local model, not a paid tier.
 
-The sidebar contains **Setup**, **Write**, **App access**, and **Models**. Model selection is handled by the Fast and Pro download cards. Connection settings and manual server/model entry are no longer shown; existing local runtime settings are preserved. This version still uses LM Studio or Ollama to run downloaded models.
+### 4. Verify setup
 
-On macOS 14 and 15, the app uses standard translucent materials and bordered buttons. With **Reduce Transparency** enabled in macOS Accessibility settings, surfaces become opaque and buttons use bordered styles. **Increase Contrast** strengthens surface borders. The app adds no custom motion effects.
+Open **Setup**. Selecting a model starts verification automatically: **Connect your local model** changes from **Checking…** to **Ready** after a fixed sample correction succeeds. Choose **Check setup** to retry if needed. This check does not read text from another app.
+
+![Setup guide showing local model, Accessibility, allowed apps, and shortcut checks](docs/images/setup.png)
+
+*Setup reports each requirement separately. Your permission and readiness states may differ from this example.*
+
+For writing only inside English Correct, choose **Use only this app** once the model is ready. No Accessibility permission or other-app approval is needed for that path.
+
+### 5. Allow suggestions in other apps — optional
+
+1. In **Setup**, choose **Open Accessibility settings**, or use **App access → Grant access**.
+2. In macOS **System Settings → Privacy & Security → Accessibility**, enable **English Correct**. If it is not listed, use **+** to add the installed app. Approve any macOS prompt yourself.
+3. Return to English Correct and open **App access**. Open the app you want help in, choose **Refresh apps**, and turn on only that app's switch. All apps start unapproved.
+4. Return to **Setup** and confirm the model, Accessibility, allowed apps, and shortcut checks are ready. Choose **Use shortcut only** to check on demand, or **Enable automatic suggestions** to check after you pause typing.
+
+![App access screen with macOS Accessibility status and individual app permission switches](docs/images/app-access.png)
+
+*The macOS permission and each app's switch are separate approvals. You can revoke either at any time.*
+
+Automatic suggestions start **paused on every launch**. Enable them again in Setup or with the switch in Write when wanted. The shortcut can still work while automatic suggestions are paused, once setup is ready. Permission loss or model changes pause automatic suggestions; successful verification never turns them on by itself.
+
+### Optional: open at login
+
+Choose **Enable open at login** when asked, or **Not now** to dismiss the question. You can change this later in **Setup → Open at login**. If macOS requires approval, use **Open Login Items** to finish in System Settings.
+
+Opening at login does not grant app access, start LM Studio, or enable automatic suggestions. Keep the local AI server available separately.
+
+## How to use
+
+### Check a draft inside English Correct
+
+1. Open **Write** and enter or paste text in **Your draft**.
+2. Choose **Check writing**.
+3. Review **Suggested revision**. Added and changed words are highlighted in green and underlined; the edit summary also identifies removed wording.
+4. Choose **Use suggestion** to update the draft, or **Dismiss** to leave it unchanged. Copy text from the writing area when finished.
+
+### Check writing in an allowed app
+
+1. Keep English Correct and the local AI server running.
+2. Click an editable input in an app you have allowed.
+3. **Select a sentence or passage** to check only that text. With nothing selected, the whole input is checked.
+4. Press **⌥⌘E (Option–Command–E)**.
+5. Review the floating suggestion. Choose **Apply** to replace the checked text, **Copy** to put the correction on the clipboard, or close the suggestion to leave your writing unchanged.
+
+Apply is unavailable when the field cannot safely accept a replacement; use Copy and paste it yourself. Long suggestions scroll. Copy and Apply use plain corrected text without the visual highlighting. If the shortcut conflicts with another app, choose **⌃⌥⌘E (Control–Option–Command–E)** in Write, App access, or Setup.
+
+With automatic suggestions enabled, the app checks the focused field after about **1.2 seconds** without typing, only in apps you allow. It still waits for you to apply any change.
+
+**Empty or whitespace-only inputs stay quiet**, even when you press the shortcut. The same applies to a whitespace-only selection. Editing a checked field dismisses its stale suggestion; clearing it cancels pending work. If the text, selection, focus, or permission changes before Apply, check the current text again.
+
+## Troubleshooting
+
+| What you see | What to try |
+| --- | --- |
+| Local model **Needs attention**, or connection failed | Start LM Studio's local server on port 1234. Confirm it is version 0.4+, then choose Models → Refresh, Use Fast/Pro, and Setup → Check setup. Authentication-protected servers are unsupported. |
+| Download finished, but writing is not ready | Choose Refresh, then Use Fast/Pro. Wait for the automatic sample check to reach Ready. Download completion alone does not select a model. |
+| An app is missing from App access | Open that app, then choose Refresh apps. |
+| Shortcut gives permission guidance | Verify both the macOS Accessibility switch and the app's own switch in App access. Reopen the installed English Correct copy if macOS requests it. |
+| Shortcut is unavailable or another app handles it | Choose the alternate shortcut and check its status in Setup. Keep English Correct running. |
+| No suggestion appears for an empty field | This is expected. Type a sentence or select nonblank text first. |
+| A custom editor is unsupported, or Apply is disabled | Use Copy if offered, or paste the text into Write and check it there. Password fields are skipped. |
+| A suggestion disappears while you edit | The original input changed, so the app discarded the old result. Check the updated text again. |
+| Automatic suggestions are paused after restarting | This is expected. Turn them on explicitly if wanted; shortcut-only use remains available after setup. |
+| Accessibility stops working after rebuilding or moving the app | Quit English Correct, keep one installed copy in a stable location, and remove/re-add that copy in macOS Accessibility settings if needed. See signing notes below. |
+
+## Privacy and permissions
+
+- **Two approvals before another app's text is read:** macOS Accessibility access and that app's opt-in. Automatic monitoring also needs its own master switch.
+- Only the foreground app's focused, supported text field is considered. Password fields are skipped. A browser approval applies across that browser's websites; there are no per-site permissions.
+- With a selection, only the selected text is sent to the local model. Otherwise the whole input is sent. Fields that cannot reliably report their selection are skipped.
+- Correction requests use a loopback-only local connection. There is no cloud fallback, telemetry, keystroke recording, clipboard polling, or saved draft history. Copy writes to the clipboard only when clicked. The model server may have its own logging settings.
+- Download requests send public model identifiers, not your writing. Initial model downloads require internet access; inference uses the downloaded model locally.
+- The app saves setup/launch choices, app permissions, local AI configuration, selected model identifiers, and download-job metadata. Text and suggestions stay in memory. Opening at login is a separate, explicit choice.
+- Apply rechecks permissions, app, field, selection, and exact original text before writing, then verifies the result. **Suggestions never apply automatically.**
+
+## Compatibility and limits
+
+Standard native text fields and plain multiline controls are supported when they expose their text and selection through Accessibility. Browser editors and custom controls vary. Whole-field replacement is plain text and may remove rich formatting; there is no simulated-paste fallback.
+
+A correction is limited to **4,000 characters / 32,000 UTF-8 bytes**. A shorter selection can be checked within a larger field up to 100,000 UTF-16 units. The in-app Check writing button requires 3–4,000 characters.
+
+On macOS 26+, the app uses native Liquid Glass. On macOS 14 and 15 it uses standard materials and bordered controls. Light/dark appearance, Reduce Transparency, and Increase Contrast have matching styles. Screenshots show one appearance; controls may look different on your Mac.
+
+Review all revisions: local model output can be incorrect. Fast has been tested with live LM Studio download and inference. Pro and Ollama have automated protocol tests, but a Pro download and live Ollama integration have not been verified. Real cross-app replacement through the live OS UI also remains unverified; see the full [verification scope and limitations](TEST-RESULTS.md).
+
+<details>
+<summary>Model downloads, removal, and existing Ollama configurations</summary>
+
+Downloads never start automatically and do not change the active model. Use Fast/Pro explicitly loads and selects it. Existing selections are retained until changed.
+
+- In LM Studio, **Stop checking** stops only English Correct's progress display; the server may continue downloading. Pause/cancel the transfer in LM Studio. **Resume checking** resumes tracking the saved job.
+- A successful download is checked against the installed model list before it becomes selectable. Missing, older, or authentication-protected servers show an error.
+- **Delete Fast… / Delete Pro…** asks for confirmation. LM Studio unloads exact model instances and moves the official Qwen Q4_K_M files to Trash; empty Trash later to reclaim space. Ambiguous, incomplete, symlinked, or other-publisher copies must be managed in LM Studio. Deleting an active model clears the writing selection. Cancel leaves it untouched, and a deleted preset can be downloaded again.
+- Model libraries are shared with other apps; deleting a model affects them too.
+
+Earlier saved Ollama configurations still work with the existing provider flow. Start Ollama before use. Ollama downloads are about 986 MB for Fast and 4.7 GB for Pro; Stop download closes the pull connection, and a retry may reuse cached partial files. Deletion unloads and deletes the exact installed tag, with shared layers possibly retained. This version has no in-app control for switching a new installation from LM Studio to Ollama.
+
+</details>
+
+<details>
+<summary>Build signing and updates</summary>
+
+The build script uses the single available Apple Development or Developer ID Application signing identity, if present; otherwise it uses ad-hoc signing. Set `ENGLISH_CORRECT_SIGNING_IDENTITY` to choose a specific identity, or `-` for ad-hoc signing. Signing failures stop the build.
+
+For an update, quit the installed app, rebuild, and copy the new app to the same location. A stable certificate-backed identity can preserve Accessibility recognition. Moving the app, changing identities, or rebuilding with ad-hoc signing may require removing and re-adding it in macOS Accessibility settings. The build script verifies the signature but does not notarize the app.
+
+</details>
 
 ## Credits and licenses
 
-Choose **English Correct → About English Correct → Credits & Licenses**, or use **English Correct → Credits & Licenses…** directly from the app menu. The window credits the Qwen team / Alibaba Cloud for the recommended Fast and Pro models, displays copyright and license information, and links to each official model repository and upstream license.
+Fast and Pro use models from **Qwen / Alibaba Cloud**, released under Apache 2.0:
 
-**Read license** opens the complete, selectable license text from the installed app without requiring a network request. Both files are unmodified upstream copies. Their exact repository revisions, integrity hashes, and checked NOTICE-file status are recorded in the bundled `Credits/Sources.json`; neither verified repository contains a separate NOTICE. Attribution does not imply endorsement. Model weights and external LM Studio/Ollama runtimes remain separate downloads.
+- [Fast: Qwen2.5 1.5B Instruct](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF) · [License](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/blob/main/LICENSE)
+- [Pro: Qwen2.5 7B Instruct](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF) · [License](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/blob/main/LICENSE)
 
-## Fast and Pro model downloads
-
-Open **Models** to download a suggested model through your configured local AI app. Start LM Studio's local server (0.4+ required for model management) or Ollama first. The app never downloads a model automatically.
-
-| Preset | Model | Download | Mac memory recommendation |
-| --- | --- | --- | --- |
-| Fast | Qwen2.5 1.5B Instruct, Q4_K_M | About 1.12 GB in LM Studio / 986 MB in Ollama | 8 GB+ |
-| Pro | Qwen2.5 7B Instruct, Q4_K_M | About 4.68 GB in LM Studio / 4.7 GB in Ollama | 16 GB+ |
-
-Both model releases use Apache 2.0. **Pro is a local preset, not a paid subscription.** Size estimates come from the published model files and can differ by provider. Memory labels are conservative app guidance rather than vendor minimums. Fast uses less memory; correction quality and speed depend on hardware and text. Review suggestions, especially from smaller models. The interface shows a deterministic summary of the actual changed words rather than displaying model-generated grammar explanations.
-
-- **Download Fast / Download Pro** downloads the model into LM Studio's or Ollama's model library. It does not change the active writing model.
-- **Use Fast / Use Pro** explicitly loads/selects that model. The interface offers the recommended Fast and Pro presets. Any model selected before this update remains selected until the user chooses another preset.
-- **Delete Fast… / Delete Pro…** removes a downloaded preset after showing its model name and a confirmation. The card returns to **Download Fast / Download Pro**, so you can download it again at any time. Deleting the active model clears the writing selection; download or choose a model before checking more text. Cancel leaves it untouched.
-- LM Studio deletion unloads the exact model instances and moves the official Qwen Q4_K_M files to **Trash**. Empty Trash later to recover the disk space. The app reads LM Studio’s configured model folder and supports the official Fast file and both Pro shards; ambiguous, incomplete, symlinked, or other publisher copies must be managed in LM Studio. Ollama unloads and deletes the exact installed tag; shared layers may remain for other models. These libraries are shared with other apps, so deletion affects their access to that model too.
-- LM Studio progress is saved using the local server job ID. **Stop checking** stops this app's progress display; the server can continue downloading. Use LM Studio to pause or cancel the actual transfer. After reopening English Correct, **Resume checking** resumes tracking the saved job.
-- Ollama **Stop download** closes the pull connection. Retry can reuse partial files cached by Ollama. Progress represents the current model file/layer.
-- A successful download is followed by installed-model verification. Incomplete/error responses never make a model selectable. A missing, older, or authentication-protected local server produces an actionable error; this version does not store server API tokens.
-- Internet access is required to fetch weights from the model publisher or Ollama registry. Only public model identifiers are sent for downloads; your writing is not part of those requests. Inference continues to use the loopback-only local AI connection.
-
-Fast download and inference were verified with LM Studio and the official Qwen model. Pro and the Ollama download protocol have automated tests; a Pro download and a live Ollama integration test have not been performed. See [verification results](TEST-RESULTS.md) for the validation scope and remaining limitations.
-
-Model attribution and sources:
-
-- [Qwen Fast source](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF) · [Apache 2.0 license](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/blob/main/LICENSE) · [Ollama package](https://ollama.com/library/qwen2.5:1.5b-instruct-q4_K_M)
-- [Qwen Pro source](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF) · [Apache 2.0 license](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/blob/main/LICENSE) · [Ollama package](https://ollama.com/library/qwen2.5:7b-instruct-q4_K_M)
-
-
-## Permissions and data
-
-- macOS Accessibility access and the particular app's opt-in are required before reading fields in another app. Automatic monitoring additionally requires the master switch; an explicit shortcut check works while monitoring is paused.
-- Only the foreground app's focused, enabled text field is considered. Password fields and unsupported controls are skipped. Automatic checks require a writable field; explicit shortcut checks can offer Copy when direct replacement is unavailable. A target is limited to 4,000 characters (32,000 UTF-8 bytes); a shorter selection can be checked inside a larger field up to 100,000 UTF-16 units.
-- Only the selected text is sent to the local model when a selection exists; otherwise the whole input is sent. Automatic checks wait 1.2 seconds, while shortcut checks start immediately. Fields that cannot reliably report their selection are skipped rather than silently broadening the check. The shortcut uses macOS hot-key registration; there is no keystroke recording, clipboard polling, cloud fallback, telemetry, or saved draft history. Copy writes the suggestion to the clipboard only when clicked.
-- The app stores whether it has launched before, setup completion, local AI settings, app permissions, download job metadata, and selected model identifiers. Setup readiness is rechecked rather than restored from a previous session. Text and suggestions remain in memory. A local model server may have independent logging settings.
-- Only literal loopback or localhost HTTP addresses are accepted. Localhost is pinned to loopback; redirects and proxy use are disabled. Known Ollama cloud aliases are excluded and checked before any text is sent. Use locally downloaded models and keep your server configured for local inference.
-- Applying rechecks permission, frontmost app, focused control, selection range, and the exact original field bytes before writing, then verifies the resulting value. Suggestions never apply automatically.
-- Permission for a browser covers that browser's accessible fields across websites. Site-specific permissions are not included.
-
-## Compatibility
-
-Standard native text fields and plain multiline controls are supported when they expose their text and selection through Accessibility. Direct replacement requires a writable value or writable selected text. Browser editors and custom controls vary; inaccessible controls are skipped. The app does not use simulated paste as a fallback. Rich formatting is not preserved by a whole-field plain-text replacement. Review suggestions before applying them; model output can be incorrect.
-
-This is a local build, not a notarized installer. The build script uses the single available Apple Development or Developer ID Application signing identity, if present, so subsequent builds can retain the same certificate-backed identity. Otherwise it uses ad-hoc signing. Set `ENGLISH_CORRECT_SIGNING_IDENTITY` to explicitly select an identity (or `-` for ad-hoc signing). It never silently falls back after a signing failure. Keep the app in a stable location after granting Accessibility. Moving it or changing its signing identity may require removing and re-adding it in macOS Accessibility settings; ad-hoc rebuilds can also require this refresh.
+Open **English Correct → Credits & Licenses…**, or the same button in **About English Correct**, for attribution and full offline license text. Exact upstream revisions, hashes, and NOTICE-file checks are recorded in [Credits/Sources.json](Sources/EnglishCorrect/Resources/Credits/Sources.json). Attribution does not imply endorsement. Model weights and LM Studio/Ollama runtimes are separate downloads.
 
 ## Build and test
 
-A Swift toolchain is required; no third-party package dependencies are used.
+There are no third-party Swift package dependencies. From the repository directory:
 
 ```sh
 swift test
 ./scripts/build-app.sh
 ./scripts/build-fixture.sh
+```
+
+The deterministic tests use injected services and isolated preferences; they do not grant OS access or inspect personal writing. Optional live tests and recorded results are documented in [TEST-RESULTS.md](TEST-RESULTS.md).
+
+<details>
+<summary>Live-model and disposable input-fixture checks</summary>
+
+To check production inference with synthetic samples against a running local model:
+
+```sh
 ENGLISH_CORRECT_TEST_MODEL=qwen2.5-1.5b-instruct .build/release/EnglishCorrect --test-local-ai
 ```
 
-The live-model test uses synthetic sentences and checks agreement, plurals, and preserving an already-correct sentence. Override `ENGLISH_CORRECT_TEST_URL` and `ENGLISH_CORRECT_TEST_MODEL` to test a different local server/model. Pass `--ollama` for an installed Ollama server.
+Set `ENGLISH_CORRECT_TEST_URL` and `ENGLISH_CORRECT_TEST_MODEL` for the local endpoint and exact model identifier. Add `--ollama` to the command for an existing Ollama server.
 
-`Tests/EnglishCorrectCoreTests` covers local API validation, provider responses, network errors, no remote redirects, cloud-model rejection, and stale request protection. `Tests/EnglishCorrectAppTests` covers the actual monitor using an injected Accessibility backend plus app settings and result invalidation. These tests do not grant OS access or inspect personal content.
+The fixture build creates `dist/English Correct Input Test.app` with disposable single-line, multiline, password, and read-only controls. Grant English Correct Accessibility permission and allow Input Test, then leave automatic suggestions paused:
 
-The separate `dist/English Correct Input Test.app` contains disposable native single-line, multiline, password, and read-only controls for manual end-to-end testing. Grant English Correct Accessibility access and allow Input Test. With automatic suggestions paused:
+1. Choose **Use whole input**, press the correction shortcut, review, and apply both sample sentences.
+2. Reset, choose **Select second sentence**, and check again. Only that sentence should appear in the suggestion and change on Apply.
+3. Change the text/selection or switch fields/apps during inference. The stale suggestion must be discarded.
+4. Focus the password field and invoke the shortcut. No correction request should be made.
+5. Revoke Input Test's permission. Shortcut checks should offer setup guidance, and automatic checks must stop.
+6. Read-only fields may offer Copy when they expose supported text and selection; Apply must remain unavailable. Native labels without a text-field role may be skipped entirely.
 
-1. Choose **Use whole input**, then press **⌥⌘E**. Both sample sentences should be checked. Review and apply.
-2. Reset, choose **Select second sentence**, and press **⌥⌘E**. Only the second sentence should appear in the suggestion and change on apply; the first remains untouched.
-3. Change the text or selection while inference runs. The old suggestion must be discarded. Switch apps and verify the same protection.
-4. Focus the password field and trigger the shortcut. It must report that password fields are skipped without requesting a correction.
-5. Revoke Input Test access and verify that the shortcut offers setup guidance. Automatic checks must also stop.
+Repeat with the browsers/editors you intend to use; their Accessibility implementations differ.
 
-Read-only/custom inputs that expose readable text and selection may offer Copy on explicit checks; they must never allow Apply. Some read-only native labels do not expose a text-field role and are skipped entirely.
+</details>
 
-See [verification results](TEST-RESULTS.md) for completed checks and remaining limitations.
+<details>
+<summary>Implementation references</summary>
 
-## Implementation references
+- [Apple Accessibility permission API](https://developer.apple.com/documentation/applicationservices/1459186-axisprocesstrustedwithoptions) and [value updates](https://developer.apple.com/documentation/applicationservices/1460434-axuielementsetattributevalue)
+- [Apple Liquid Glass adoption](https://developer.apple.com/documentation/technologyoverviews/adopting-liquid-glass)
+- [LM Studio structured output](https://lmstudio.ai/docs/developer/openai-compat/structured-output), [download API](https://lmstudio.ai/docs/developer/rest/download), [progress API](https://lmstudio.ai/docs/developer/rest/download-status), and [unload API](https://lmstudio.ai/docs/developer/rest/unload)
+- [LM Studio model folders](https://lmstudio.ai/docs/app/advanced/import-model) and [maintainer guidance on deletion](https://github.com/lmstudio-ai/lms/issues/199)
+- [Ollama generation](https://docs.ollama.com/api/generate), [pull](https://docs.ollama.com/api/pull), and [delete](https://docs.ollama.com/api/delete)
 
-- [Apple Accessibility permission API](https://developer.apple.com/documentation/applicationservices/1459186-axisprocesstrustedwithoptions)
-- [Apple Accessibility value updates](https://developer.apple.com/documentation/applicationservices/1460434-axuielementsetattributevalue)
-- [Apple Liquid Glass adoption](https://developer.apple.com/documentation/technologyoverviews/adopting-liquid-glass) and [SwiftUI glass containers](https://developer.apple.com/documentation/SwiftUI/GlassEffectContainer)
-- [LM Studio structured output](https://lmstudio.ai/docs/developer/openai-compat/structured-output)
-- [Ollama generation API](https://docs.ollama.com/api/generate)
-
-- [LM Studio download API](https://lmstudio.ai/docs/developer/rest/download) and [progress API](https://lmstudio.ai/docs/developer/rest/download-status)
-- [Ollama pull API](https://docs.ollama.com/api/pull)
-- [Ollama delete API](https://docs.ollama.com/api/delete) and [unload via generate](https://docs.ollama.com/api/generate)
-- [LM Studio unload API](https://lmstudio.ai/docs/developer/rest/unload), [model folder structure](https://lmstudio.ai/docs/app/advanced/import-model), and [maintainer guidance on deleting model files](https://github.com/lmstudio-ai/lms/issues/199)
+</details>
