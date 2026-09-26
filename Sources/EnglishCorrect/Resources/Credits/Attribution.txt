@@ -1,0 +1,19 @@
+Credits & Licenses
+
+Qwen2.5-1.5B-Instruct (GGUF)
+Creator: Qwen Team / Alibaba Cloud
+License: Apache License, Version 2.0
+Copyright 2024 Alibaba Cloud
+Official source: https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF
+Offline license: Qwen2.5-1.5B-Instruct-LICENSE.txt
+
+Qwen2.5-7B-Instruct (GGUF)
+Creator: Qwen Team / Alibaba Cloud
+License: Apache License, Version 2.0
+Copyright 2024 Alibaba Cloud
+Official source: https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF
+Offline license: Qwen2.5-7B-Instruct-LICENSE.txt
+
+The complete upstream license texts are included unchanged for offline reading. Neither official model repository contains a separate NOTICE file at the verified revisions. Sources.json records the exact revisions, original file locations, checksums, and repository file lists.
+
+English Correct connects to separately installed LM Studio or Ollama. Model weights and these external runtimes are not bundled with the app. The models are third-party works credited to their creators; their inclusion does not imply endorsement of English Correct.
