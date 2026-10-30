@@ -346,7 +346,29 @@ final class AccessibilityMonitor {
               confirmed.utf8.elementsEqual(expected.utf8) else {
             throw AccessibilityMonitorError.verificationFailed
         }
+        let caret = (snapshot.selectionRange?.location ?? 0) + correction.corrected.utf16.count
+        restoreCaret(at: caret, in: snapshot, expectedText: expected)
         report("Correction applied in \(snapshot.appName).")
+    }
+
+    private func restoreCaret(at location: Int, in snapshot: FieldSnapshot, expectedText: String) {
+        // Setting AXValue can reset an editor's cursor to the start. Collapse the
+        // selection after the inserted text, using AX's UTF-16 offsets. Cursor
+        // support is optional: a failed caret update must not retry a text write
+        // that has already succeeded.
+        guard location <= expectedText.utf16.count,
+              stillPermitted(bundleID: snapshot.bundleID, pid: snapshot.pid, intent: snapshot.intent),
+              isSettable(kAXSelectedTextRangeAttribute, of: snapshot.element),
+              stillPermitted(bundleID: snapshot.bundleID, pid: snapshot.pid, intent: snapshot.intent),
+              let focused = backend.focusedElement(for: snapshot.pid), CFEqual(focused, snapshot.element),
+              let current = attribute(kAXValueAttribute, of: snapshot.element) as? String,
+              current.utf8.elementsEqual(expectedText.utf8),
+              stillPermitted(bundleID: snapshot.bundleID, pid: snapshot.pid, intent: snapshot.intent),
+              let latestFocus = backend.focusedElement(for: snapshot.pid), CFEqual(latestFocus, snapshot.element),
+              stillPermitted(bundleID: snapshot.bundleID, pid: snapshot.pid, intent: snapshot.intent) else { return }
+        var range = CFRange(location: location, length: 0)
+        guard let value = AXValueCreate(.cfRange, &range) else { return }
+        _ = backend.write(kAXSelectedTextRangeAttribute, value: value, to: snapshot.element)
     }
 
     private func publish(_ snapshot: FieldSnapshot?) {

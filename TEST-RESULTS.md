@@ -1,3 +1,12 @@
+# Version 1.7.6 cursor-after-acceptance validation
+
+- Full suite: 336 tests, 334 passed, two optional legacy live tests skipped, zero failures.
+- Successful replacements now collapse the cursor after the inserted correction. Selected-passage replacements leave it before untouched following text. Tests cover both text-write methods, whole-input/manual/automatic requests, emoji, combining characters, and UTF-16 offsets.
+- Cursor positioning rechecks the field, exact resulting text, and permissions. Unsupported or failed cursor writes keep the successful text replacement and never retry it. Changed focus/text and revoked access prevent cursor writes; failed or unverified text replacements do not move the cursor.
+- Return workflow tests verify the shared Apply path restores the cursor, closes the popup, and releases Return. Continued typing after a selected correction preserves surrounding text.
+- A disposable real NSTextView behind a synthetic Accessibility backend confirmed typing after Apply: “She went yesterday. Next.” for whole input, and new text inserted between the corrected selected passage and its untouched suffix, with an emoji prefix preserved. The native automated Return attempt inserted a newline rather than activating acceptance, so physical/global Return delivery was not re-established in this session; Return routing was verified with an injected keyboard backend. Arbitrary third-party editors remain unverified.
+- The 1.7.6/build 24 DMG passed integrity, mounted-app, and strict signature checks. It remains Apple Development-signed and is not Apple-notarized.
+
 # Version 1.7.5 expressive Slang validation
 
 - Full suite: 331 tests, 329 passed, two optional legacy live tests skipped, zero failures.

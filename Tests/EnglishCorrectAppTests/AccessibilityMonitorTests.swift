@@ -236,18 +236,89 @@ final class AccessibilityMonitorTests: XCTestCase {
         try monitor.apply(correction(snapshot, corrected: updated), to: snapshot)
         XCTAssertTrue(backend.text.utf8.elementsEqual(updated.utf8))
         XCTAssertEqual(backend.operations.filter { $0 == "write" }.count, 1)
-        XCTAssertEqual(backend.operations.last, "read:\(kAXValueAttribute)")
+        XCTAssertLessThan(try XCTUnwrap(backend.operations.firstIndex(of: "write")),
+                          try XCTUnwrap(backend.operations.lastIndex(of: "read:\(kAXValueAttribute)")))
+    }
+
+    func testWholeInputApplyPlacesCollapsedCaretAtUTF16End() async throws {
+        for intent in [CaptureIntent.automatic, .shortcut] {
+            let (monitor, backend) = prepared()
+            monitor.isEnabled = intent == .automatic
+            backend.selectionRangeSettable = true
+            let snapshot = try XCTUnwrap(monitor.captureCurrent(intent: intent))
+            let updated = "She went home.\nCafé 👩🏽‍💻 👍🏽"
+            try monitor.apply(correction(snapshot, corrected: updated), to: snapshot)
+            XCTAssertEqual(backend.selectedRange, NSRange(location: updated.utf16.count, length: 0))
+            XCTAssertNotEqual(updated.count, updated.utf16.count)
+            XCTAssertEqual(backend.writtenAttributes, [kAXValueAttribute, kAXSelectedTextRangeAttribute])
+            XCTAssertEqual(backend.text, updated)
+        }
+    }
+
+    func testSelectedApplyPlacesCaretAfterReplacementBeforeUntouchedSuffix() async throws {
+        for selectedWritable in [false, true] {
+            let (monitor, backend) = prepared()
+            backend.selectedTextSettable = selectedWritable
+            backend.selectionRangeSettable = true
+            let prefix = "👩🏽‍💻 Cafe\u{0301}\n"
+            let suffix = "\nKeep this exactly."
+            backend.text = prefix + "She go home." + suffix
+            backend.selectedRange = NSRange(location: prefix.utf16.count, length: "She go home.".utf16.count)
+            let snapshot = try XCTUnwrap(monitor.captureCurrent(intent: .shortcut))
+            let replacement = "She went home. 👍🏽"
+            try monitor.apply(correction(snapshot, corrected: replacement), to: snapshot)
+            XCTAssertTrue(backend.text.utf8.elementsEqual((prefix + replacement + suffix).utf8))
+            XCTAssertEqual(backend.selectedRange, NSRange(location: prefix.utf16.count + replacement.utf16.count, length: 0))
+            XCTAssertEqual(backend.writtenAttributes, [selectedWritable ? kAXSelectedTextAttribute : kAXValueAttribute,
+                                                      kAXSelectedTextRangeAttribute])
+        }
+    }
+
+    func testUnsupportedOrFailedCaretUpdateDoesNotRetrySuccessfulReplacement() async throws {
+        for supported in [false, true] {
+            let (monitor, backend) = prepared()
+            backend.selectionRangeSettable = supported
+            backend.caretWriteResult = .cannotComplete
+            let snapshot = try XCTUnwrap(monitor.captureCurrent(intent: .shortcut))
+            try monitor.apply(correction(snapshot), to: snapshot)
+            XCTAssertEqual(backend.text, "She went to school yesterday.")
+            XCTAssertEqual(backend.writtenAttributes.filter { $0 == kAXValueAttribute }.count, 1)
+            XCTAssertEqual(backend.writtenAttributes.contains(kAXSelectedTextRangeAttribute), supported)
+            XCTAssertEqual(backend.selectedRange, NSRange(location: 0, length: 0))
+        }
+    }
+
+    func testCaretUpdateSkipsChangedFocusTextOrPermissionsAfterReplacement() async throws {
+        for change in ["field", "app", "text", "OS permission", "app permission"] {
+            let (monitor, backend) = prepared()
+            backend.selectionRangeSettable = true
+            let snapshot = try XCTUnwrap(monitor.captureCurrent(intent: .shortcut))
+            backend.onCaretCheck = {
+                switch change {
+                case "field": backend.focused = AXUIElementCreateApplication(91_002)
+                case "app": backend.frontmostApplication = .init(pid: 91_002, bundleID: "test.other", name: "Other")
+                case "text": backend.text = "Newer typing."
+                case "OS permission": backend.isTrusted = false
+                default: monitor.allowedBundleIDs = []
+                }
+            }
+            try monitor.apply(correction(snapshot), to: snapshot)
+            XCTAssertEqual(backend.writtenAttributes, [kAXValueAttribute], change)
+            XCTAssertEqual(backend.text, change == "text" ? "Newer typing." : "She went to school yesterday.")
+        }
     }
 
     func testWriteFailureAndReadbackMismatchProduceErrors() async throws {
         for failWrite in [false, true] {
             let (monitor, backend) = prepared()
+            backend.selectionRangeSettable = true
             let snapshot = try XCTUnwrap(monitor.captureCurrent())
             if failWrite { backend.writeResult = .cannotComplete }
             else { backend.replacementOverride = "cafe\u{0301} is good" }
             XCTAssertThrowsError(try monitor.apply(correction(snapshot, corrected: "caf\u{00E9} is good"), to: snapshot)) {
                 XCTAssertEqual($0 as? AccessibilityMonitorError, failWrite ? .writeFailed : .verificationFailed)
             }
+            XCTAssertFalse(backend.writtenAttributes.contains(kAXSelectedTextRangeAttribute))
         }
     }
 
@@ -500,6 +571,9 @@ private final class FakeAccessibilityBackend: AccessibilityBackend {
     var enabled = true
     var settable = true
     var selectedTextSettable = false
+    var selectionRangeSettable = false
+    var caretWriteResult: AXError = .success
+    var onCaretCheck: (() -> Void)?
     var text = "She go to school yesterday."
     var selectedRange = NSRange(location: 0, length: 0)
     var selectionError: AXError = .success
@@ -546,17 +620,30 @@ private final class FakeAccessibilityBackend: AccessibilityBackend {
     func isSettable(_ attribute: String, on element: AXUIElement) -> Bool {
         operations.append("settable")
         onSettable?()
+        if attribute == kAXSelectedTextRangeAttribute {
+            onCaretCheck?()
+            return selectionRangeSettable
+        }
         return attribute == kAXSelectedTextAttribute ? selectedTextSettable : settable
     }
 
     func write(_ attribute: String, value: CFTypeRef, to element: AXUIElement) -> AXError {
         operations.append("write")
         writtenAttributes.append(attribute)
+        if attribute == kAXSelectedTextRangeAttribute {
+            guard caretWriteResult == .success else { return caretWriteResult }
+            guard CFGetTypeID(value) == AXValueGetTypeID() else { return .illegalArgument }
+            var range = CFRange()
+            guard AXValueGetValue(value as! AXValue, .cfRange, &range) else { return .illegalArgument }
+            selectedRange = NSRange(location: range.location, length: range.length)
+            return .success
+        }
         if writeResult == .success {
             if let replacementOverride { text = replacementOverride }
             else if attribute == kAXSelectedTextAttribute, let range = Range(selectedRange, in: text) {
                 text.replaceSubrange(range, with: value as? String ?? "")
             } else { text = value as? String ?? "" }
+            selectedRange = NSRange(location: 0, length: 0)
         }
         return writeResult
     }

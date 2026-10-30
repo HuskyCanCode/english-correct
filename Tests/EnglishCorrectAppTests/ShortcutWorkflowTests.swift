@@ -107,6 +107,7 @@ final class ShortcutWorkflowTests: XCTestCase {
     func testReturnAcceptsVisibleSuggestionAndReleasesKeyAfterApply() async throws {
         let fixture = try await ShortcutFixture()
         defer { fixture.close() }
+        fixture.backend.selectionRangeSettable = true
         let keyboard = AcceptanceBackendStub()
         let panel = SuggestionPanel(model: fixture.app, presentsWindows: false, acceptanceBackend: keyboard)
         fixture.app.panel = panel
@@ -119,12 +120,36 @@ final class ShortcutWorkflowTests: XCTestCase {
         XCTAssertNotNil(keyboard.action)
         keyboard.pressReturn()
         XCTAssertEqual(fixture.backend.text, "She went yesterday.")
-        XCTAssertEqual(fixture.backend.writes, [kAXValueAttribute])
+        XCTAssertEqual(fixture.backend.writes, [kAXValueAttribute, kAXSelectedTextRangeAttribute])
+        XCTAssertEqual(fixture.backend.selection, NSRange(location: "She went yesterday.".utf16.count, length: 0))
         XCTAssertNil(fixture.app.externalCorrection)
         XCTAssertFalse(panel.isShown)
         XCTAssertNil(keyboard.action)
         keyboard.pressReturn()
-        XCTAssertEqual(fixture.backend.writes.count, 1)
+        XCTAssertEqual(fixture.backend.writes.count, 2)
+    }
+
+    func testReturnLeavesCaretAfterSelectedCorrectionForContinuedTyping() async throws {
+        let fixture = try await ShortcutFixture()
+        defer { fixture.close() }
+        let prefix = "👩🏽‍💻 Café\n"
+        let suffix = " Keep this."
+        let replacement = "She went yesterday. 👍🏽"
+        fixture.backend.text = prefix + "She go yesterday." + suffix
+        fixture.backend.selection = NSRange(location: prefix.utf16.count, length: "She go yesterday.".utf16.count)
+        fixture.backend.selectionSettable = true
+        fixture.backend.selectionRangeSettable = true
+        fixture.client.correctedText = replacement
+        let keyboard = AcceptanceBackendStub()
+        fixture.app.panel = SuggestionPanel(model: fixture.app, presentsWindows: false, acceptanceBackend: keyboard)
+        fixture.app.triggerShortcut()
+        await waitUntil { fixture.app.externalCorrection != nil }
+        keyboard.pressReturn()
+        XCTAssertEqual(fixture.backend.selection, NSRange(location: prefix.utf16.count + replacement.utf16.count, length: 0))
+        fixture.backend.text = (fixture.backend.text as NSString).replacingCharacters(in: fixture.backend.selection, with: " More")
+        XCTAssertEqual(fixture.backend.text, prefix + replacement + " More" + suffix)
+        XCTAssertNil(keyboard.action)
+        XCTAssertNil(fixture.app.externalCorrection)
     }
 
     func testReturnNeverAcceptsDismissedCopyOnlyChangedOrRevokedSuggestion() async throws {
@@ -812,6 +837,7 @@ private final class ShortcutBackend: AccessibilityBackend {
     var selection = NSRange(location: 0, length: 0)
     var valueSettable = true
     var selectionSettable = false
+    var selectionRangeSettable = false
     var operations: [String] = []
     var writes: [String] = []
 
@@ -843,11 +869,19 @@ private final class ShortcutBackend: AccessibilityBackend {
         operations.append("settable:\(attribute)")
         if attribute == kAXValueAttribute { return valueSettable }
         if attribute == kAXSelectedTextAttribute { return selectionSettable }
+        if attribute == kAXSelectedTextRangeAttribute { return selectionRangeSettable }
         return false
     }
 
     func write(_ attribute: String, value: CFTypeRef, to element: AXUIElement) -> AXError {
         writes.append(attribute)
+        if attribute == kAXSelectedTextRangeAttribute {
+            guard CFGetTypeID(value) == AXValueGetTypeID() else { return .illegalArgument }
+            var range = CFRange()
+            guard AXValueGetValue(value as! AXValue, .cfRange, &range) else { return .illegalArgument }
+            selection = NSRange(location: range.location, length: range.length)
+            return .success
+        }
         guard let replacement = value as? String else { return .illegalArgument }
         if attribute == kAXValueAttribute {
             text = replacement
@@ -856,6 +890,7 @@ private final class ShortcutBackend: AccessibilityBackend {
         } else {
             return .attributeUnsupported
         }
+        selection = NSRange(location: 0, length: 0)
         return .success
     }
 }
