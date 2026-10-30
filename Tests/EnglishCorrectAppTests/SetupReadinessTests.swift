@@ -281,7 +281,7 @@ final class SetupReadinessTests: XCTestCase {
         }
     }
 
-    func testEveryRelaunchIsPausedAndMustRecheckAIRegardlessOfSavedCompletion() async throws {
+    func testRelaunchWaitsForReadinessEvenWithRememberedAutomaticChoice() async throws {
         let fixture = try SetupFixture()
         defer { fixture.close() }
         try await fixture.makeReady()
@@ -304,7 +304,47 @@ final class SetupReadinessTests: XCTestCase {
         XCTAssertEqual(fixture.backend.operations, operationsBeforeRelaunch, "Relaunch must not inspect a field.")
     }
 
-    func testOpeningSetupPausesMonitoringWithoutReadingInputs() async throws {
+    func testRememberedOnResumesOnlyAfterModelAndPermissionsAreReady() async throws {
+        let fixture = try SetupFixture()
+        defer { fixture.close() }
+        try await fixture.makeReady()
+        fixture.app.setAutomaticSuggestions(true)
+        XCTAssertTrue(fixture.defaults.bool(forKey: "rememberedAutomaticSuggestions"))
+        let monitor = AccessibilityMonitor(backend: fixture.backend)
+        defer { monitor.stop() }
+        let relaunched = AppModel(defaults: fixture.defaults, monitor: monitor, startMonitoring: false,
+                                  listModels: { _ in [SetupFixture.modelID] },
+                                  correctText: { text, _ in Correction(original: text, corrected: "She doesn't like apples.", explanation: "Agreement.") })
+        XCTAssertFalse(relaunched.enabled)
+        relaunched.checkSetup()
+        try await setupEventually { relaunched.setupAIState == .ready }
+        XCTAssertFalse(relaunched.enabled, "Shortcut registration is still required")
+        relaunched.shortcutRegistered = true
+        XCTAssertTrue(relaunched.enabled)
+        XCTAssertTrue(monitor.isEnabled)
+        relaunched.setAutomaticSuggestions(false)
+        XCTAssertFalse(fixture.defaults.bool(forKey: "rememberedAutomaticSuggestions"))
+    }
+
+    func testExplicitOffCancelsPendingStartupResume() async throws {
+        let fixture = try SetupFixture()
+        defer { fixture.close() }
+        fixture.defaults.set(true, forKey: "rememberedAutomaticSuggestions")
+        let monitor = AccessibilityMonitor(backend: fixture.backend)
+        defer { monitor.stop() }
+        let app = AppModel(defaults: fixture.defaults, monitor: monitor, startMonitoring: false,
+                           listModels: { _ in [SetupFixture.modelID] },
+                           correctText: { text, _ in Correction(original: text, corrected: "She doesn't like apples.", explanation: "Agreement.") })
+        app.setAutomaticSuggestions(false)
+        app.shortcutRegistered = true
+        app.checkSetup()
+        try await setupEventually { app.setupAIState == .ready }
+        XCTAssertFalse(app.enabled)
+        XCTAssertFalse(monitor.isEnabled)
+        XCTAssertFalse(fixture.defaults.bool(forKey: "rememberedAutomaticSuggestions"))
+    }
+
+    func testSetupToWriteNavigationPreservesAutomaticSuggestionsWithoutReadingInputs() async throws {
         let fixture = try SetupFixture()
         defer { fixture.close() }
         try await fixture.makeReady()
@@ -312,8 +352,12 @@ final class SetupReadinessTests: XCTestCase {
         fixture.backend.operations.removeAll()
         fixture.app.openSetup()
         XCTAssertEqual(fixture.app.section, "Setup")
-        XCTAssertFalse(fixture.app.enabled)
-        XCTAssertFalse(fixture.monitor.isEnabled)
+        XCTAssertTrue(fixture.app.enabled)
+        XCTAssertTrue(fixture.monitor.isEnabled)
+        fixture.app.section = "Write"
+        XCTAssertTrue(fixture.app.enabled)
+        XCTAssertTrue(fixture.monitor.isEnabled)
+        XCTAssertTrue(fixture.defaults.bool(forKey: "rememberedAutomaticSuggestions"))
         XCTAssertTrue(fixture.backend.operations.isEmpty)
     }
 

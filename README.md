@@ -2,7 +2,7 @@
 
 A native macOS writing assistant that checks English with a local AI model. Check a draft inside the app, or request a suggestion in another app you explicitly allow. You review every change before applying it.
 
-**[Download English Correct 1.7.0 for Mac](https://github.com/HuskyCanCode/english-correct/releases/download/v1.7.0/English-Correct-1.7.0-arm64.dmg)** · [Release notes and checksums](https://github.com/HuskyCanCode/english-correct/releases/tag/v1.7.0)
+**[Download English Correct 1.7.1 for Mac](https://github.com/HuskyCanCode/english-correct/releases/download/v1.7.1/English-Correct-1.7.1-arm64.dmg)** · [Release notes and checksums](https://github.com/HuskyCanCode/english-correct/releases/tag/v1.7.1)
 
 Apple Silicon (M-series) · macOS 14+ · No Xcode needed to install. The installer is about **13 MB**, including the local AI engine. Fast and Pro model files download separately inside the app.
 
@@ -24,7 +24,7 @@ Models are downloaded from the official Qwen repositories and verified against p
 
 ### 1. Download, install, and open
 
-1. [Download the 1.7.0 disk image](https://github.com/HuskyCanCode/english-correct/releases/download/v1.7.0/English-Correct-1.7.0-arm64.dmg). On the release page, choose **English-Correct-1.7.0-arm64.dmg** under Assets; the source-code archives are for developers.
+1. [Download the 1.7.1 disk image](https://github.com/HuskyCanCode/english-correct/releases/download/v1.7.1/English-Correct-1.7.1-arm64.dmg). On the release page, choose **English-Correct-1.7.1-arm64.dmg** under Assets; the source-code archives are for developers.
 2. Open the downloaded `.dmg` and drag **English Correct.app** onto the **Applications** folder shortcut. If updating, quit the old app first and replace the installed copy.
 3. Eject the disk image, then open **English Correct** from Applications. Keep it in that location before granting Accessibility access.
 4. In Setup, open Models to download Fast or Pro. The engine is included; model files are downloaded separately.
@@ -81,7 +81,7 @@ For writing only inside English Correct, choose **Use only this app** once the m
 
 *The macOS permission and each app's switch are separate approvals. You can revoke either at any time.*
 
-Automatic suggestions start **paused on every launch**. Enable them again in Setup or with the switch in Write when wanted. The shortcut can still work while automatic suggestions are paused, once setup is ready. Permission loss or model changes pause automatic suggestions; successful verification never turns them on by itself.
+Automatic suggestions **remember your explicit on/off choice**. When you reopen the app, a saved On choice resumes only after the model check succeeds and Accessibility, allowed apps, and the shortcut are ready. New users start off. Choosing shortcut-only, in-app-only, switching the toggle off, or Pause suggestions saves Off. Permission loss and model changes still pause the current session.
 
 ### Optional: open at login
 
@@ -118,7 +118,7 @@ With automatic suggestions enabled, the app checks the focused field after about
 | --- | --- |
 | Download link shows 404 | Open the Releases page and choose the latest DMG asset. |
 | macOS blocks the first launch | This development build is not notarized. Read the first-launch notice above and Apple's linked guidance. |
-| Download is stuck on an older release asking for LM Studio | Install version 1.7.0, then choose **Use built-in AI instead** if shown. No separate AI app is needed. |
+| Download is stuck on an older release asking for LM Studio | Install version 1.7.1, then choose **Use built-in AI instead** if shown. No separate AI app is needed. |
 | Built-in engine is missing | Install the complete app from the DMG; a bare source/debug executable does not include the engine. |
 | A model cannot start | Close memory-heavy apps and try Fast. Download/select a model, then use Setup → Check setup. |
 | Download failed or was stopped | Check internet and free space, then choose Download again. Completed verified model files are reused; an interrupted file downloads again. |
@@ -130,7 +130,7 @@ With automatic suggestions enabled, the app checks the focused field after about
 | No suggestion appears for an empty field | This is expected. Type a sentence or select nonblank text first. |
 | A custom editor is unsupported, or Apply is disabled | Use Copy if offered, or paste the text into Write and check it there. Password fields are skipped. |
 | A suggestion disappears while you edit | The original input changed, so the app discarded the old result. Check the updated text again. |
-| Automatic suggestions are paused after restarting | This is expected. Turn them on explicitly if wanted; shortcut-only use remains available after setup. |
+| Automatic suggestions are paused after restarting | A remembered On choice waits for the model and permission checks. Finish Setup if a check needs attention. Off stays off. |
 | Accessibility stops working after rebuilding or moving the app | Quit English Correct, keep one installed copy in a stable location, and remove/re-add that copy in macOS Accessibility settings if needed. See signing notes below. |
 
 ## Privacy and permissions

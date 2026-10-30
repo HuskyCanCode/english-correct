@@ -18,7 +18,7 @@ struct LoginItemSettingsView: View {
                     VStack(alignment: .leading, spacing: 5) {
                         Text(controller.shouldAsk ? "Open English Correct when you log in?" : "Open at login")
                             .font(.system(size: 15, weight: .semibold))
-                        Text("Have English Correct ready when you sign in to your Mac. Automatic suggestions still start paused.")
+                        Text("Have English Correct ready when you sign in to your Mac. Your automatic-suggestions choice is remembered.")
                             .font(.system(size: 12)).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }

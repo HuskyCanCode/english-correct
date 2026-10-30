@@ -74,7 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func showAbout() { aboutWindows.showAbout() }
     @objc func showSetup() { model.openSetup() }
     @objc func showCredits() { aboutWindows.showCredits() }
-    @objc func pause() { model.enabled = false }
+    @objc func pause() { model.setAutomaticSuggestions(false) }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 }
 

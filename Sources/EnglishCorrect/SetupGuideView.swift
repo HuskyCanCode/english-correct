@@ -124,7 +124,7 @@ struct SetupGuideView: View {
                     .disabled(!model.readyInApp)
                     .accessibilityIdentifier("setup-in-app")
                 Spacer()
-                Text("Automatic suggestions start paused after a restart.")
+                Text("Your choice is remembered. Suggestions resume after setup checks pass.")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

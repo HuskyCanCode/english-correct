@@ -16,6 +16,7 @@ final class AppModel: ObservableObject {
     @Published var shortcutRegistered = false {
         didSet {
             if oldValue && !shortcutRegistered { pauseExternalSuggestions() }
+            resumeRememberedSuggestionsIfReady()
         }
     }
     @Published var enabled = false {
@@ -35,6 +36,7 @@ final class AppModel: ObservableObject {
     @Published var trusted = false {
         didSet {
             if oldValue && !trusted && !isRestoringSettings { pauseExternalSuggestions() }
+            resumeRememberedSuggestionsIfReady()
         }
     }
     @Published var monitoringStatus = "Suggestions are paused"
@@ -88,6 +90,7 @@ final class AppModel: ObservableObject {
     private var draftEpoch = UUID()
     private var connectionEpoch = UUID()
     private var setupEpoch = UUID()
+    private var resumeSuggestionsAfterLaunch = false
     private var isRestoringSettings = true
     private let defaults: UserDefaults
 
@@ -121,6 +124,7 @@ final class AppModel: ObservableObject {
         }
         if let saved = defaults.string(forKey: "correctionShortcut"), let choice = CorrectionShortcut(rawValue: saved) { shortcut = choice }
         setupCompleted = defaults.bool(forKey: "setupGuideCompleted")
+        resumeSuggestionsAfterLaunch = defaults.bool(forKey: "rememberedAutomaticSuggestions")
         section = hasUsedApp ? "Write" : "Setup"
         defaults.set(true, forKey: "hasLaunchedBefore")
         isRestoringSettings = false
@@ -204,6 +208,7 @@ final class AppModel: ObservableObject {
                     return
                 }
                 setupAIState = .ready
+                resumeRememberedSuggestionsIfReady()
             } catch {
                 guard setupCheckIsCurrent(epoch, configuration: config) else { return }
                 setupAIState = .failed(error.localizedDescription)
@@ -250,6 +255,7 @@ final class AppModel: ObservableObject {
     }
 
     private func pauseExternalSuggestions() {
+        resumeSuggestionsAfterLaunch = false
         if enabled { enabled = false }
         invalidateExternal()
     }
@@ -290,13 +296,14 @@ final class AppModel: ObservableObject {
     }
 
     func openSetup() {
-        if enabled { enabled = false }
         invalidateExternal()
         section = "Setup"
         onOpenSettings?()
     }
 
     func setAutomaticSuggestions(_ automatic: Bool) {
+        resumeSuggestionsAfterLaunch = false
+        if !automatic { defaults.set(false, forKey: "rememberedAutomaticSuggestions") }
         if automatic {
             trusted = monitor.accessibilityTrusted
             guard readyInOtherApps else {
@@ -304,7 +311,14 @@ final class AppModel: ObservableObject {
                 return
             }
         }
+        defaults.set(automatic, forKey: "rememberedAutomaticSuggestions")
         enabled = automatic
+    }
+
+    private func resumeRememberedSuggestionsIfReady() {
+        guard !isRestoringSettings, resumeSuggestionsAfterLaunch, readyInOtherApps, monitor.accessibilityTrusted else { return }
+        resumeSuggestionsAfterLaunch = false
+        enabled = true
     }
 
     func refreshApps() {

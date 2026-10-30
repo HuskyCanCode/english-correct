@@ -1,3 +1,10 @@
+# Version 1.7.1 automatic-suggestions validation
+
+- Full automated suite: 315 tests, 313 passed, two optional legacy live tests skipped, zero failures.
+- Regression checks confirm Setup → Write navigation preserves active automatic suggestions without reading a field during navigation.
+- Explicit On/Off choices persist. A saved On choice waits for the sample-model check, Accessibility, app approval, and shortcut registration after restart. Explicit Off cancels pending startup restoration.
+- Menu-bar Pause suggestions saves Off. Permission/model revocation still pauses the active session.
+
 # Version 1.7.0 built-in engine validation
 
 - The full automated suite executed 313 tests: 311 passed, two optional legacy live tests skipped, zero failures.
