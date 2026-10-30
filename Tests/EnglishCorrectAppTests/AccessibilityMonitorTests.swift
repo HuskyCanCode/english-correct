@@ -308,6 +308,161 @@ final class AccessibilityMonitorTests: XCTestCase {
         }
     }
 
+    func testDeferredCaretChecksRepairEditorResetsWithoutRewritingText() async throws {
+        let clock = CaretUpdateClock()
+        let backend = FakeAccessibilityBackend()
+        let monitor = AccessibilityMonitor(backend: backend, waitForCaretUpdate: { try await clock.wait($0) })
+        defer { monitor.stop(); clock.finishAll() }
+        monitor.allowedBundleIDs = [FakeAccessibilityBackend.bundleID]
+        backend.selectionRangeSettable = true
+        let snapshot = try XCTUnwrap(monitor.captureCurrent(intent: .shortcut))
+        let revised = "She went home. 👩🏽‍💻"
+        try monitor.apply(correction(snapshot, corrected: revised), to: snapshot)
+        let end = NSRange(location: revised.utf16.count, length: 0)
+        XCTAssertEqual(backend.selectedRange, end)
+        for step in 1...3 {
+            await waitForCaret { clock.delays.count == step }
+            backend.selectedRange = NSRange(location: 0, length: 0)
+            clock.finish()
+            await waitForCaret { backend.selectedRange == end }
+        }
+        XCTAssertEqual(clock.delays, [0.06, 0.12, 0.18])
+        XCTAssertEqual(backend.writtenAttributes.filter { $0 == kAXValueAttribute }.count, 1)
+        XCTAssertEqual(backend.writtenAttributes.filter { $0 == kAXSelectedTextRangeAttribute }.count, 4)
+    }
+
+    func testDeferredCaretHandlesIgnoredWritesAndInaccurateSettableMetadata() async throws {
+        for reportedWritable in [false, true] {
+            let clock = CaretUpdateClock()
+            let backend = FakeAccessibilityBackend()
+            let monitor = AccessibilityMonitor(backend: backend, waitForCaretUpdate: { try await clock.wait($0) })
+            defer { monitor.stop(); clock.finishAll() }
+            monitor.allowedBundleIDs = [FakeAccessibilityBackend.bundleID]
+            backend.selectionRangeSettable = reportedWritable
+            backend.ignoredCaretWrites = reportedWritable ? 1 : 0
+            let snapshot = try XCTUnwrap(monitor.captureCurrent(intent: .shortcut))
+            try monitor.apply(correction(snapshot), to: snapshot)
+            XCTAssertEqual(backend.selectedRange, NSRange(location: 0, length: 0))
+            await waitForCaret { clock.delays.count == 1 }
+            clock.finish()
+            await waitForCaret { clock.delays.count == 2 }
+            XCTAssertEqual(backend.selectedRange, NSRange(location: backend.text.utf16.count, length: 0))
+            XCTAssertEqual(backend.writtenAttributes.filter { $0 == kAXValueAttribute }.count, 1)
+        }
+    }
+
+    func testDeferredCaretNeverOverridesUserInteractionOrChangedTarget() async throws {
+        for change in ["Home", "typing", "click", "drag", "selection", "caret", "field", "app", "text", "OS permission", "app permission", "secure", "disabled"] {
+            let clock = CaretUpdateClock()
+            let backend = FakeAccessibilityBackend()
+            let monitor = AccessibilityMonitor(backend: backend, waitForCaretUpdate: { try await clock.wait($0) })
+            defer { monitor.stop(); clock.finishAll() }
+            monitor.allowedBundleIDs = [FakeAccessibilityBackend.bundleID]
+            backend.selectionRangeSettable = true
+            let snapshot = try XCTUnwrap(monitor.captureCurrent(intent: .shortcut))
+            try monitor.apply(correction(snapshot), to: snapshot)
+            await waitForCaret { clock.delays.count == 1 }
+            backend.selectedRange = NSRange(location: 0, length: 0)
+            switch change {
+            case "Home", "typing", "click", "drag": backend.userInteracted = true
+            case "selection": backend.selectedRange = NSRange(location: 0, length: 3)
+            case "caret": backend.selectedRange = NSRange(location: 2, length: 0)
+            case "field": backend.focused = AXUIElementCreateApplication(91_002)
+            case "app": backend.frontmostApplication = .init(pid: 91_002, bundleID: "test.other", name: "Other")
+            case "text": backend.text = "New typing."
+            case "OS permission": backend.isTrusted = false
+            case "app permission": monitor.allowedBundleIDs = []
+            case "secure": backend.subrole = kAXSecureTextFieldSubrole
+            default: backend.enabled = false
+            }
+            let selection = backend.selectedRange
+            let writes = backend.writtenAttributes
+            backend.operations.removeAll()
+            clock.finish()
+            await settleCaret()
+            XCTAssertEqual(backend.selectedRange, selection, change)
+            XCTAssertEqual(backend.writtenAttributes, writes, change)
+            XCTAssertEqual(clock.delays.count, 1, change)
+            if ["secure", "disabled", "OS permission", "app permission"].contains(change) {
+                XCTAssertFalse(backend.operations.contains("read:\(kAXValueAttribute)"), change)
+            }
+        }
+    }
+
+    func testUserNavigationDuringReplacementPreventsAllCaretWrites() async throws {
+        let clock = CaretUpdateClock()
+        let backend = FakeAccessibilityBackend()
+        let monitor = AccessibilityMonitor(backend: backend, waitForCaretUpdate: { try await clock.wait($0) })
+        defer { monitor.stop(); clock.finishAll() }
+        monitor.allowedBundleIDs = [FakeAccessibilityBackend.bundleID]
+        backend.selectionRangeSettable = true
+        backend.onTextWrite = { backend.userInteracted = true }
+        let snapshot = try XCTUnwrap(monitor.captureCurrent(intent: .shortcut))
+        try monitor.apply(correction(snapshot), to: snapshot)
+        XCTAssertEqual(backend.selectedRange.location, 0)
+        XCTAssertEqual(backend.writtenAttributes, [kAXValueAttribute])
+        await waitForCaret { clock.delays.count == 1 }
+        clock.finish()
+        await settleCaret()
+        XCTAssertEqual(backend.writtenAttributes, [kAXValueAttribute])
+    }
+
+    func testNewApplyInvalidatesDeferredCaretEvenIfOldWaitIgnoresCancellation() async throws {
+        let clock = CaretUpdateClock()
+        let backend = FakeAccessibilityBackend()
+        let monitor = AccessibilityMonitor(backend: backend, waitForCaretUpdate: { try await clock.wait($0) })
+        defer { monitor.stop(); clock.finishAll() }
+        monitor.allowedBundleIDs = [FakeAccessibilityBackend.bundleID]
+        backend.selectionRangeSettable = true
+        let first = try XCTUnwrap(monitor.captureCurrent(intent: .shortcut))
+        try monitor.apply(correction(first), to: first)
+        await waitForCaret { clock.delays.count == 1 }
+        backend.text = "I has a book."
+        backend.selectedRange = NSRange(location: 0, length: 0)
+        let second = try XCTUnwrap(monitor.captureCurrent(intent: .shortcut))
+        try monitor.apply(correction(second, corrected: "I have a book. 👍🏽"), to: second)
+        await waitForCaret { clock.delays.count == 2 }
+        backend.selectedRange = NSRange(location: 0, length: 0)
+        clock.finish()
+        await settleCaret()
+        XCTAssertEqual(backend.selectedRange.location, 0)
+        clock.finish()
+        await waitForCaret { clock.delays.count == 3 }
+        XCTAssertEqual(backend.selectedRange, NSRange(location: backend.text.utf16.count, length: 0))
+        XCTAssertEqual(backend.writtenAttributes.filter { $0 == kAXValueAttribute }.count, 2)
+    }
+
+    func testStoppingMonitorCancelsDeferredCaretRestoration() async throws {
+        let clock = CaretUpdateClock()
+        let backend = FakeAccessibilityBackend()
+        let monitor = AccessibilityMonitor(backend: backend, waitForCaretUpdate: { try await clock.wait($0) })
+        defer { clock.finishAll() }
+        monitor.allowedBundleIDs = [FakeAccessibilityBackend.bundleID]
+        backend.selectionRangeSettable = true
+        let snapshot = try XCTUnwrap(monitor.captureCurrent(intent: .shortcut))
+        try monitor.apply(correction(snapshot), to: snapshot)
+        await waitForCaret { clock.delays.count == 1 }
+        backend.selectedRange = NSRange(location: 0, length: 0)
+        monitor.stop()
+        let writes = backend.writtenAttributes
+        clock.finish()
+        await settleCaret()
+        XCTAssertEqual(backend.selectedRange.location, 0)
+        XCTAssertEqual(backend.writtenAttributes, writes)
+    }
+
+    private func waitForCaret(_ condition: () -> Bool, file: StaticString = #filePath, line: UInt = #line) async {
+        for _ in 0..<100 {
+            if condition() { return }
+            try? await Task.sleep(nanoseconds: 1_000_000)
+        }
+        XCTAssertTrue(condition(), "Caret task did not reach its expected state", file: file, line: line)
+    }
+
+    private func settleCaret() async {
+        for _ in 0..<20 { await Task.yield() }
+    }
+
     func testWriteFailureAndReadbackMismatchProduceErrors() async throws {
         for failWrite in [false, true] {
             let (monitor, backend) = prepared()
@@ -573,7 +728,10 @@ private final class FakeAccessibilityBackend: AccessibilityBackend {
     var selectedTextSettable = false
     var selectionRangeSettable = false
     var caretWriteResult: AXError = .success
+    var ignoredCaretWrites = 0
+    var userInteracted = false
     var onCaretCheck: (() -> Void)?
+    var onTextWrite: (() -> Void)?
     var text = "She go to school yesterday."
     var selectedRange = NSRange(location: 0, length: 0)
     var selectionError: AXError = .success
@@ -584,6 +742,8 @@ private final class FakeAccessibilityBackend: AccessibilityBackend {
     var replacementOverride: String?
     var onSettable: (() -> Void)?
     var writtenAttributes: [String] = []
+
+    func hasUserInteraction(since uptime: TimeInterval) -> Bool { userInteracted }
 
     func focusedElement(for pid: pid_t) -> AXUIElement? {
         operations.append("focus")
@@ -632,6 +792,7 @@ private final class FakeAccessibilityBackend: AccessibilityBackend {
         writtenAttributes.append(attribute)
         if attribute == kAXSelectedTextRangeAttribute {
             guard caretWriteResult == .success else { return caretWriteResult }
+            if ignoredCaretWrites > 0 { ignoredCaretWrites -= 1; return .success }
             guard CFGetTypeID(value) == AXValueGetTypeID() else { return .illegalArgument }
             var range = CFRange()
             guard AXValueGetValue(value as! AXValue, .cfRange, &range) else { return .illegalArgument }
@@ -644,7 +805,27 @@ private final class FakeAccessibilityBackend: AccessibilityBackend {
                 text.replaceSubrange(range, with: value as? String ?? "")
             } else { text = value as? String ?? "" }
             selectedRange = NSRange(location: 0, length: 0)
+            onTextWrite?()
         }
         return writeResult
+    }
+}
+
+@MainActor
+private final class CaretUpdateClock {
+    var delays: [Double] = []
+    private var pending: [CheckedContinuation<Void, Error>] = []
+    func wait(_ delay: Double) async throws {
+        delays.append(delay)
+        try await withCheckedThrowingContinuation { pending.append($0) }
+    }
+    func finish() {
+        guard !pending.isEmpty else { return }
+        pending.removeFirst().resume()
+    }
+    func finishAll() {
+        let unfinished = pending
+        pending.removeAll()
+        unfinished.forEach { $0.resume() }
     }
 }

@@ -1,3 +1,13 @@
+# Version 1.7.7 delayed cursor-reset validation
+
+- Full suite: 350 tests, 348 passed, two optional legacy live tests skipped, zero failures.
+- The installed previous version was confirmed as 1.7.6/build 24 with the same binary as its release. Its single immediate caret write did not handle an editor resetting selection during a later render.
+- After successful replacement, the app now checks the cursor after 60, 180, and 360 ms of scheduled waits. A readable collapsed zero position can be repaired even when settable metadata is inaccurate. These checks never rewrite the accepted text.
+- Exact resulting bytes, focused field/app, permissions, nonsecure/enabled state, and an apply generation are checked. Typing, repeated navigation keys, clicks, dragging, or scrolling cancel cursor updates. Key/click releases are ignored. Only aggregate event ages are read, without key contents or event recording.
+- Deterministic regressions cover delayed resets, ignored successful range writes, inaccurate metadata, Home/navigation to zero, selections and other caret positions, changed text/focus/permissions/protection, new applies, monitor stop, Unicode offsets, and Return repair continuing after the popup closes. Immediate restoration also respects interaction during slow replacement/confirmation.
+- A disposable real NSTextView deliberately reset its cursor to zero 30 ms after insertion. The production coordinator repaired it: the whole-input case recorded one reset and two caret writes at UTF-16 position 19, and subsequent typing appended “ Next.”. The selected-passage case preserved its emoji prefix and suffix, recorded a repair at position 32, and inserted “ More.” immediately before untouched following text. Native interaction used Apply with a synthetic Accessibility backend; Return routing was verified by automated workflow tests.
+- The 1.7.7/build 25 DMG passed integrity, mounted-app, and strict signature checks. The installed Applications copy was backed up, updated to the exact checked binary, restarted, and reached ready with its remembered automatic-suggestion preference restored. This build remains Apple Development-signed and is not Apple-notarized. Arbitrary third-party editors and physical/global Return delivery were not reverified.
+
 # Version 1.7.6 cursor-after-acceptance validation
 
 - Full suite: 336 tests, 334 passed, two optional legacy live tests skipped, zero failures.

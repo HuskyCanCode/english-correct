@@ -2,7 +2,7 @@
 
 A native macOS writing assistant that checks English with a local AI model. Check a draft inside the app, or request a suggestion in another app you explicitly allow. You review every change before applying it.
 
-**[Download English Correct 1.7.6 for Mac](https://github.com/HuskyCanCode/english-correct/releases/download/v1.7.6/English-Correct-1.7.6-arm64.dmg)** · [Release notes and checksums](https://github.com/HuskyCanCode/english-correct/releases/tag/v1.7.6)
+**[Download English Correct 1.7.7 for Mac](https://github.com/HuskyCanCode/english-correct/releases/download/v1.7.7/English-Correct-1.7.7-arm64.dmg)** · [Release notes and checksums](https://github.com/HuskyCanCode/english-correct/releases/tag/v1.7.7)
 
 Apple Silicon (M-series) · macOS 14+ · No Xcode needed to install. The installer is about **13 MB**, including the local AI engine. Fast and Pro model files download separately inside the app.
 
@@ -24,7 +24,7 @@ Models are downloaded from the official Qwen repositories and verified against p
 
 ### 1. Download, install, and open
 
-1. [Download the 1.7.6 disk image](https://github.com/HuskyCanCode/english-correct/releases/download/v1.7.6/English-Correct-1.7.6-arm64.dmg). On the release page, choose **English-Correct-1.7.6-arm64.dmg** under Assets; the source-code archives are for developers.
+1. [Download the 1.7.7 disk image](https://github.com/HuskyCanCode/english-correct/releases/download/v1.7.7/English-Correct-1.7.7-arm64.dmg). On the release page, choose **English-Correct-1.7.7-arm64.dmg** under Assets; the source-code archives are for developers.
 2. Open the downloaded `.dmg` and drag **English Correct.app** onto the **Applications** folder shortcut. If updating, quit the old app first and replace the installed copy.
 3. Eject the disk image, then open **English Correct** from Applications. Keep it in that location before granting Accessibility access.
 4. In Setup, open Models to download Fast or Pro. The engine is included; model files are downloaded separately.
@@ -108,7 +108,7 @@ Opening at login does not grant app access or enable automatic suggestions. The 
 
 **Slang** favors playful, conversational expressions over texting abbreviations. For example, “Let me think” can become “Let me noodle on it,” and “I am very busy today” can become “I’m swamped today.” The model should keep the original meaning and use an idiom only where it fits. Wording varies by model; review the result before applying.
 
-After applying with Return or Apply, supported editors place the cursor immediately after the inserted correction so you can continue typing. For a selected passage, the cursor stays before any untouched text that follows it. Editors that do not expose a writable cursor position keep their own cursor behavior.
+After applying with Return or Apply, the cursor is placed immediately after the inserted correction so you can continue typing. For a selected passage, it stays before untouched following text. The app briefly rechecks editors that reset the cursor while updating. Typing, navigation, clicks, scrolling, or changes to the input stop that repair. Editors that reject cursor positioning keep their own behavior.
 
 Return accepts only an editable suggestion while its popup is visible. It is released when the popup closes, and is not reserved for loading, error, or copy-only popups. If Return is already reserved, the popup tells you to use Apply.
 
@@ -124,7 +124,7 @@ With automatic suggestions enabled, adjust **Wait after typing** in Write or Set
 | --- | --- |
 | Download link shows 404 | Open the Releases page and choose the latest DMG asset. |
 | macOS blocks the first launch | This development build is not notarized. Read the first-launch notice above and Apple's linked guidance. |
-| Download is stuck on an older release asking for LM Studio | Install version 1.7.6, then choose **Use built-in AI instead** if shown. No separate AI app is needed. |
+| Download is stuck on an older release asking for LM Studio | Install version 1.7.7, then choose **Use built-in AI instead** if shown. No separate AI app is needed. |
 | Built-in engine is missing | Install the complete app from the DMG; a bare source/debug executable does not include the engine. |
 | A model cannot start | Close memory-heavy apps and try Fast. Download/select a model, then use Setup → Check setup. |
 | Download failed or was stopped | Check internet and free space, then choose Download again. Completed verified model files are reused; an interrupted file downloads again. |
@@ -147,6 +147,7 @@ With automatic suggestions enabled, adjust **Wait after typing** in Write or Set
 - The bundled engine listens only on loopback with a fresh authentication key for each launch; its web interface and prompt logs are disabled. Correction requests use a loopback-only local connection. There is no cloud fallback, telemetry, keystroke recording, clipboard polling, or saved draft history. Copy writes to the clipboard only when clicked. Legacy external model servers may have their own logging settings.
 - Download requests send public model identifiers, not your writing. Initial model downloads require internet access; inference uses the downloaded model locally.
 - The app saves setup/launch choices, app permissions, local AI configuration, selected model identifiers, writing style, and download-job metadata. Text and suggestions stay in memory. Opening at login is a separate, explicit choice.
+- Brief cursor checks after acceptance use recent keyboard/mouse activity timestamps so they stop when you interact. They do not read or record which keys you press.
 - Apply rechecks permissions, app, field, selection, and exact original text before writing, then verifies the result. **Suggestions never apply automatically.**
 
 ## Compatibility and limits

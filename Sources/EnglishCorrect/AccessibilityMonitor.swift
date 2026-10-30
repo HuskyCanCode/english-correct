@@ -13,11 +13,16 @@ struct MonitoredApplication {
 protocol AccessibilityBackend {
     var isTrusted: Bool { get }
     var frontmostApplication: MonitoredApplication? { get }
+    func hasUserInteraction(since uptime: TimeInterval) -> Bool
     func focusedElement(for pid: pid_t) -> AXUIElement?
     func pid(of element: AXUIElement) -> pid_t?
     func read(_ attribute: String, from element: AXUIElement) -> (AXError, CFTypeRef?)
     func isSettable(_ attribute: String, on element: AXUIElement) -> Bool
     func write(_ attribute: String, value: CFTypeRef, to element: AXUIElement) -> AXError
+}
+
+extension AccessibilityBackend {
+    func hasUserInteraction(since uptime: TimeInterval) -> Bool { false }
 }
 
 @MainActor
@@ -26,6 +31,10 @@ private final class NativeAccessibilityBackend: AccessibilityBackend {
     var frontmostApplication: MonitoredApplication? {
         guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
         return MonitoredApplication(pid: app.processIdentifier, bundleID: app.bundleIdentifier, name: app.localizedName)
+    }
+
+    func hasUserInteraction(since uptime: TimeInterval) -> Bool {
+        CaretInputActivity.hasInteraction(since: uptime)
     }
 
     func focusedElement(for pid: pid_t) -> AXUIElement? {
@@ -141,6 +150,7 @@ final class AccessibilityMonitor {
     var allowedBundleIDs: Set<String> = [] {
         didSet {
             if allowedBundleIDs != oldValue {
+                cancelCaretRestoration()
                 if let lastSnapshot, !allowedBundleIDs.contains(lastSnapshot.bundleID) {
                     publish(nil)
                 }
@@ -152,7 +162,7 @@ final class AccessibilityMonitor {
     var isEnabled = false {
         didSet {
             guard isEnabled != oldValue else { return }
-            if !isEnabled { publish(nil) }
+            if !isEnabled { cancelCaretRestoration(); publish(nil) }
             if timer != nil { poll() }
         }
     }
@@ -175,13 +185,21 @@ final class AccessibilityMonitor {
     private(set) var lastCaptureStatus = "Suggestions are paused."
     private(set) var lastCaptureWasEmpty = false
     private let backend: AccessibilityBackend
+    private let waitForCaretUpdate: (Double) async throws -> Void
+    private var caretTask: Task<Void, Never>?
+    private var caretEpoch = UUID()
 
-    init(backend: AccessibilityBackend? = nil) {
+    init(backend: AccessibilityBackend? = nil,
+         waitForCaretUpdate: @escaping (Double) async throws -> Void = { seconds in
+             try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+         }) {
         self.backend = backend ?? NativeAccessibilityBackend()
+        self.waitForCaretUpdate = waitForCaretUpdate
     }
 
     deinit {
         timer?.invalidate()
+        caretTask?.cancel()
     }
 
     func start() {
@@ -195,6 +213,7 @@ final class AccessibilityMonitor {
     }
 
     func stop() {
+        cancelCaretRestoration()
         timer?.invalidate()
         timer = nil
         publish(nil)
@@ -300,6 +319,8 @@ final class AccessibilityMonitor {
     }
 
     func apply(_ correction: Correction, to snapshot: FieldSnapshot) throws {
+        cancelCaretRestoration()
+        let acceptedAt = ProcessInfo.processInfo.systemUptime
         guard (isEnabled || snapshot.intent == .shortcut), backend.isTrusted,
               allowedBundleIDs.contains(snapshot.bundleID) else {
             publish(nil)
@@ -347,28 +368,77 @@ final class AccessibilityMonitor {
             throw AccessibilityMonitorError.verificationFailed
         }
         let caret = (snapshot.selectionRange?.location ?? 0) + correction.corrected.utf16.count
-        restoreCaret(at: caret, in: snapshot, expectedText: expected)
+        restoreCaret(at: caret, in: snapshot, expectedText: expected, acceptedAt: acceptedAt)
+        scheduleCaretRestoration(at: caret, in: snapshot, expectedText: expected, acceptedAt: acceptedAt)
         report("Correction applied in \(snapshot.appName).")
     }
 
-    private func restoreCaret(at location: Int, in snapshot: FieldSnapshot, expectedText: String) {
-        // Setting AXValue can reset an editor's cursor to the start. Collapse the
-        // selection after the inserted text, using AX's UTF-16 offsets. Cursor
-        // support is optional: a failed caret update must not retry a text write
-        // that has already succeeded.
+    private func cancelCaretRestoration() {
+        caretEpoch = UUID()
+        caretTask?.cancel()
+        caretTask = nil
+    }
+
+    private func scheduleCaretRestoration(at location: Int, in snapshot: FieldSnapshot,
+                                          expectedText: String, acceptedAt: TimeInterval) {
+        let epoch = caretEpoch
+        let wait = waitForCaretUpdate
+        caretTask = Task { [weak self] in
+            defer {
+                if self?.caretEpoch == epoch { self?.caretTask = nil }
+            }
+            // Some editors reset the selection on their next render. Recheck
+            // briefly after the popup closes; never rewrite the accepted text.
+            for delay in [0.06, 0.12, 0.18] {
+                do { try await wait(delay) }
+                catch { return }
+                guard let self, !Task.isCancelled, self.caretEpoch == epoch,
+                      self.restoreCaret(at: location, in: snapshot, expectedText: expectedText,
+                                        acceptedAt: acceptedAt, deferred: true) else { return }
+            }
+        }
+    }
+
+    @discardableResult
+    private func restoreCaret(at location: Int, in snapshot: FieldSnapshot, expectedText: String,
+                              acceptedAt: TimeInterval, deferred: Bool = false) -> Bool {
+        // Caret support is optional. Deferred repair may try a range write when
+        // settable metadata is inaccurate; its actual result is authoritative.
         guard location <= expectedText.utf16.count,
               stillPermitted(bundleID: snapshot.bundleID, pid: snapshot.pid, intent: snapshot.intent),
-              isSettable(kAXSelectedTextRangeAttribute, of: snapshot.element),
+              !backend.hasUserInteraction(since: acceptedAt) else { return false }
+        let reportedWritable = isSettable(kAXSelectedTextRangeAttribute, of: snapshot.element)
+        guard reportedWritable || deferred,
               stillPermitted(bundleID: snapshot.bundleID, pid: snapshot.pid, intent: snapshot.intent),
               let focused = backend.focusedElement(for: snapshot.pid), CFEqual(focused, snapshot.element),
-              let current = attribute(kAXValueAttribute, of: snapshot.element) as? String,
-              current.utf8.elementsEqual(expectedText.utf8),
+              backend.pid(of: focused) == snapshot.pid,
+              let role = attribute(kAXRoleAttribute, of: focused) as? String,
+              [kAXTextFieldRole, kAXTextAreaRole].contains(role) else { return false }
+        let (subroleResult, subrole) = backend.read(kAXSubroleAttribute, from: focused)
+        guard [.success, .attributeUnsupported, .noValue].contains(subroleResult),
+              (subrole as? String) != kAXSecureTextFieldSubrole,
+              (attribute(kAXEnabledAttribute, of: focused) as? Bool) == true,
               stillPermitted(bundleID: snapshot.bundleID, pid: snapshot.pid, intent: snapshot.intent),
+              let current = attribute(kAXValueAttribute, of: focused) as? String,
+              current.utf8.elementsEqual(expectedText.utf8) else { return false }
+        if deferred {
+            let (result, value) = backend.read(kAXSelectedTextRangeAttribute, from: focused)
+            guard result == .success, let value, CFGetTypeID(value) == AXValueGetTypeID() else { return false }
+            var selection = CFRange()
+            guard AXValueGetValue(value as! AXValue, .cfRange, &selection) else { return false }
+            if selection.location == location && selection.length == 0 { return true }
+            // Only repair the reported reset-to-start. Other positions and
+            // selections belong to the user, even if the text is unchanged.
+            guard selection.location == 0 && selection.length == 0 else { return false }
+        }
+        guard stillPermitted(bundleID: snapshot.bundleID, pid: snapshot.pid, intent: snapshot.intent),
               let latestFocus = backend.focusedElement(for: snapshot.pid), CFEqual(latestFocus, snapshot.element),
-              stillPermitted(bundleID: snapshot.bundleID, pid: snapshot.pid, intent: snapshot.intent) else { return }
+              stillPermitted(bundleID: snapshot.bundleID, pid: snapshot.pid, intent: snapshot.intent),
+              !backend.hasUserInteraction(since: acceptedAt) else { return false }
         var range = CFRange(location: location, length: 0)
-        guard let value = AXValueCreate(.cfRange, &range) else { return }
-        _ = backend.write(kAXSelectedTextRangeAttribute, value: value, to: snapshot.element)
+        guard let value = AXValueCreate(.cfRange, &range) else { return false }
+        let result = backend.write(kAXSelectedTextRangeAttribute, value: value, to: snapshot.element)
+        return result == .success || result == .cannotComplete
     }
 
     private func publish(_ snapshot: FieldSnapshot?) {

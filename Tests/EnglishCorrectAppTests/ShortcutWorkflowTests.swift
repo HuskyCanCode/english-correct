@@ -152,6 +152,39 @@ final class ShortcutWorkflowTests: XCTestCase {
         XCTAssertNil(fixture.app.externalCorrection)
     }
 
+    func testReturnRepairsDelayedResetAfterPopupCloses() async throws {
+        for selected in [false, true] {
+            let clock = TypingPauseClock()
+            let fixture = try await ShortcutFixture(waitForCaretUpdate: { try await clock.wait($0) })
+            defer { fixture.close(); clock.finishAll() }
+            let prefix = selected ? "👩🏽‍💻 Café\n" : ""
+            let suffix = selected ? " Keep this." : ""
+            let revised = "She went yesterday. 👍🏽"
+            fixture.backend.text = prefix + "She go yesterday." + suffix
+            if selected {
+                fixture.backend.selection = NSRange(location: prefix.utf16.count, length: "She go yesterday.".utf16.count)
+                fixture.backend.selectionSettable = true
+            }
+            fixture.backend.selectionRangeSettable = true
+            fixture.client.correctedText = revised
+            let keyboard = AcceptanceBackendStub()
+            let panel = SuggestionPanel(model: fixture.app, presentsWindows: false, acceptanceBackend: keyboard)
+            fixture.app.panel = panel
+            fixture.app.triggerShortcut()
+            await waitUntil { fixture.app.externalCorrection != nil }
+            keyboard.pressReturn()
+            XCTAssertFalse(panel.isShown)
+            XCTAssertNil(keyboard.action)
+            await waitUntil { clock.durations.count == 1 }
+            fixture.backend.selection = NSRange(location: 0, length: 0)
+            clock.finish()
+            await waitUntil { clock.durations.count == 2 }
+            XCTAssertEqual(fixture.backend.selection, NSRange(location: prefix.utf16.count + revised.utf16.count, length: 0))
+            XCTAssertEqual(fixture.backend.text, prefix + revised + suffix)
+            XCTAssertEqual(fixture.backend.writes.filter { $0 == kAXValueAttribute || $0 == kAXSelectedTextAttribute }.count, 1)
+        }
+    }
+
     func testReturnNeverAcceptsDismissedCopyOnlyChangedOrRevokedSuggestion() async throws {
         for invalidation in ["dismissed", "copy-only", "changed", "revoked"] {
             let fixture = try await ShortcutFixture()
@@ -736,6 +769,9 @@ private final class ShortcutFixture {
     let app: AppModel
 
     init(allowed: Bool = true, liveModel: String? = nil,
+         waitForCaretUpdate: @escaping (Double) async throws -> Void = { seconds in
+             try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+         },
          waitForAutomaticSuggestion: @escaping (Double) async throws -> Void = { seconds in
              try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
          }) async throws {
@@ -748,7 +784,7 @@ private final class ShortcutFixture {
             AppPermission(id: Self.permission.id, name: Self.permission.name, allowed: allowed)
         ]), forKey: "appPermissions")
         backend = ShortcutBackend()
-        monitor = AccessibilityMonitor(backend: backend)
+        monitor = AccessibilityMonitor(backend: backend, waitForCaretUpdate: waitForCaretUpdate)
         client = ShortcutClient()
         client.useLiveModel = liveModel != nil
         let client = client
