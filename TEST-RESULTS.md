@@ -1,3 +1,10 @@
+# Version 1.7.8 release package verification
+
+- Packaged English-Correct-1.7.8-arm64.dmg, version 1.7.8/build 26, with the app, Applications shortcut, and installation instructions. The disk image is 13,598,799 bytes (about 13 MB). The bundled local engine is included; model weights, local preferences, diagnostics, logs, and test fixtures are excluded.
+- Disk-image integrity, read-only mounting, packaged executable equality, version/build/architecture metadata, Applications shortcut, and install-text checks passed. Strict deep bundle verification and individual signatures passed for all 12 Mach-O files. Their dependencies resolve to bundled libraries or macOS system paths, and their declared minimum OS versions do not exceed macOS 14. This is not a live test on an older Mac.
+- The package SHA-256 is 99c70f62763c490444ba8d18f5fda2b19ff8207e5c0b8b925b92a3f39ee103f9. SHA256SUMS.txt was generated and verified. The app is Apple Development-signed and is not Apple-notarized.
+- The source/full-suite verification below applies to this app code. The release retains the documented ChatGPT cursor-reset limitation and does not claim arbitrary third-party editor compatibility.
+
 # Version 1.7.8 source verification
 
 - Final full suite on 30 October 2026: 393 tests executed, 391 passed, two optional legacy live tests skipped, zero failures. This includes appearance, popup geometry, shortcut lifecycle, Unicode highlighting, guarded Undo, download/provider, and existing cursor-restoration regressions.
