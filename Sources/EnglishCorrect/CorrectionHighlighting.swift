@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SwiftUI
 import EnglishCorrectCore
@@ -5,8 +6,8 @@ import EnglishCorrectCore
 /// Styling is presentation-only: Copy and Apply continue to use the exact
 /// corrected string, with no markup, annotation, or extra characters.
 enum CorrectionHighlighting {
-    static let foreground = Color(red: 0.08, green: 0.34, blue: 0.22)
-    static let background = Color(red: 0.80, green: 0.93, blue: 0.84)
+    static let foreground = GlassTheme.primary
+    static let background = GlassTheme.changeHighlight
 
     static func correctedText(for correction: Correction) -> AttributedString {
         var result = AttributedString(correction.corrected)

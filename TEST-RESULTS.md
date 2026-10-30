@@ -1,3 +1,78 @@
+# Version 1.7.8 source verification
+
+- Final full suite on 30 October 2026: 393 tests executed, 391 passed, two optional legacy live tests skipped, zero failures. This includes appearance, popup geometry, shortcut lifecycle, Unicode highlighting, guarded Undo, download/provider, and existing cursor-restoration regressions.
+- The final app build and installed executable match, and strict deep signature verification passed. Soft Blue is the final Light palette; Dark colors, native backdrop blur, and accessibility fallbacks are preserved.
+- Source review found no blocking issues or captured writing/credentials in the changed files. Generated apps, installers, test fixtures, logs, and model weights remain excluded from Git. Cursor diagnostics are opt-in metadata only; the experimental text-marker resolver is not integrated into production correction.
+- This push updates source and documentation. README download links continue to point to the published 1.7.7 installer. The reported ChatGPT cursor reset and real backdrop-compositing verification retain the limitations recorded below.
+
+# Soft Blue Light palette
+
+- Applied the user's final Soft Blue choice: #F7FAFD off-white backgrounds, #DCEAF6 mist-blue action buttons and changed-word highlights, and #22384A navy text. Sidebar, card, border, badge, and secondary colors use coordinated soft blues. All 15 existing Dark palette roles match their prior values; native blur, opacity, and correction behavior are unchanged.
+- Opaque button/highlight text contrast is 9.89:1, including 8.31:1 for pressed suggestion actions. Primary text on the solid backdrop is 11.57:1. Secondary labels on tinted cards are 5.31:1 and disabled labels are 5.47:1. Native glass may mute inactive controls, and backdrop compositing varies; these ratios describe the specified solid fills.
+- All 19 existing appearance, suggestion geometry, inactive-action footer, and highlighting checks passed. The live Light main-window palette and layout were inspected. The signed app passed strict deep signature verification, was installed with an identical executable hash, and restarted.
+- The saved Light appearance, Casual style, and 0.3-second timing were retained. Automatic suggestions resumed after the startup model check. The Write page was returned to its initial scroll position.
+
+# Soft Blush Light buttons
+
+- Light action buttons and control tint use #F4DADD Soft Blush, with dark plum #42323A labels. The popup has separate action-fill and text-accent roles so Apply, Copy, and Undo receive blush fills while links, status text, and icons retain deep rose. Dark palette values and the prior Dark prominent-action fill are preserved.
+- Opaque suggestion labels have 9.10:1 contrast normally and 7.67:1 with the existing pressed overlay. Disabled semantics and cream disabled fills remain intact. Native Light buttons explicitly receive dark labels; writing-style options retain explicit readable text styling.
+- All 19 existing appearance, geometry, inactive-action footer, and highlighting checks passed after the final modifier refinement. Native Light Setup buttons and writing-style labels were visually inspected. The modifier retains content identity when appearance changes. Existing blur and correction behavior are unchanged.
+- The final signed app passed strict deep verification, was installed with an identical executable hash, and restarted. Automatic suggestions resumed. The latest user-selected Light appearance was left in place after previewing.
+
+# Pastel Pink/Cream/Blue Light palette
+
+- Applied the latest light-only reference: #F5C7C9 blush cards/sidebar, #EFE4D4 cream backdrop, #F8819B pink glass tint, and #B9D9EA Copy actions and changed-word highlights. Companion off-white surfaces, deep rose #A02D50 actions, and plum text keep the pastel palette readable. All 14 Dark palette roles were compared against the prior values and are unchanged.
+- Opaque Apply labels have 7.03:1 contrast, including 6.35:1 when pressed. Copy/highlight text is 8.11:1, including 6.86:1 for pressed Copy. Secondary labels on blush are 5.29:1; disabled labels on cream are 6.36:1. Native blur, transparency, accessibility fallbacks, and correction behavior are unchanged.
+- All 19 existing appearance, suggestion geometry, inactive-action footer, and highlighting checks passed. The production Light popup render was reviewed. The final signed app passed strict deep signature verification, was installed with an identical executable hash, and restarted in the saved Light appearance.
+
+# Cream/Teal Light and Blue/Lavender Dark palettes
+
+- Replaced the previous palettes with the latest references: #244855, #E64833, #874F41, #90AEAD, and #FBE9D0 in Light; #3D52A0, #7091E6, #8697C4, #ADBBDA, and #EDE8F5 in Dark. Derived deep-blue surfaces, lighter sage surfaces, and a deeper orange text/action shade preserve contrast. Native controls use deep blue in Dark so their light labels stay readable, while custom suggestion actions have explicit opaque fills and foreground colors.
+- Opaque suggestion Apply contrast is 5.05:1 in Light and 8.83:1 in Dark; Copy is 8.28:1 and 11.87:1. Highlighted changes are 7.23:1 and 5.99:1. Secondary/disabled labels on the tinted surfaces are 4.79:1 and 6.25:1. Native blur, transparency, accessibility fallbacks, and correction behavior are preserved.
+- All 19 existing appearance, suggestion geometry, inactive-action footer, and highlighting checks passed after the final control-color change. Light and Dark production popup renders and live main-window palettes were inspected. Window captures do not establish real backdrop compositing.
+- The final signed build passed strict deep signature verification, was installed with an identical executable hash, and restarted. The user's Dark appearance, timing, and writing style were retained.
+
+# Blush Light and Navy Dark palettes
+
+- Applied the user's separate reference palettes: warm white, dusty blush, and rose actions in Light; charcoal, navy, slate, and pale blue actions in Dark. The app, auxiliary windows, suggestion actions, and changed-word highlights share adaptive theme colors. Existing native blur, translucency, and accessibility fallbacks are preserved.
+- Opaque suggestion Apply text contrast is 6.12:1 in Light and 12.44:1 in Dark. Copy text is 8.72:1 and 11.93:1; highlighted text is 8.72:1 and 5.89:1. Disabled actions retain disabled semantics and opaque fills, with text contrast above 5.4:1.
+- All 19 existing appearance, suggestion geometry, inactive-action footer, and highlighting checks passed. The production dark opaque popup and light popup text/buttons were visually inspected. Live main-window Light and Dark appearances were reviewed; window captures do not establish live backdrop compositing.
+- The signed build passed strict deep signature verification, was installed with an identical executable hash, and restarted. Automatic suggestions resumed with the saved timing and Casual style. The user's Dark appearance was restored after checking Light.
+
+# Native translucent and blurred backgrounds
+
+- Reduced stacked mint fills so the native window backdrop is visible through content cards and the sidebar. Main, About, and Credits windows use clear, nonopaque window backing. The suggestion uses one rounded native popover material rather than stacked whole-card materials; action buttons and text remain opaque.
+- Added a shared NSVisualEffectView bridge with behind-window blending, active material, light/dark/high-contrast appearance, and a cached stretchable rounded material mask. Controls retain Liquid Glass where available. Reduce Transparency and the existing forced-opaque environment bypass the blur view and draw solid surfaces.
+- All 19 existing appearance, suggestion geometry, inactive-action footer, and highlighting checks passed. No correction, Undo, keyboard, model, or app-access behavior was changed.
+- A temporary, synthetic striped backdrop was opened for visual verification. The computer-use tool returns flattened JPEG window captures without backdrop color variation; these establish layout and text readability, not real WindowServer compositing. A direct user visual check was requested and remains pending.
+- The final signed app passed strict deep signature verification, was installed with an identical executable hash, and restarted; automatic suggestions resumed. The temporary backdrop was closed afterward. The current macOS Reduce Transparency and Increase Contrast preferences are both off; no system accessibility settings were changed.
+
+# Mint & Teal appearance refinement
+
+- Applied the selected palette: #EDF8F5 background, #237264 actions, #183F38 text, and #C9EADF change highlights. Cards, sidebar, glass, model badges, and auxiliary windows use coordinated mint colors; dark appearance uses deep teal surfaces and pale mint actions.
+- Inactive suggestion buttons retain opaque fills. Enabled button text contrast is 5.73:1–9.80:1, and change highlights are 7.17:1–9.03:1 across appearances. Disabled styling and accessibility fallbacks are preserved.
+- All 14 existing suggestion geometry, inactive-panel footer, and highlighting checks passed. The dark opaque production-popup render and live light/dark main windows were visually inspected.
+- The signed app passed strict deep verification, was installed and restarted, and reached ready with automatic suggestions on. Appearance was returned to System after validation. Existing Undo, keyboard routing, model selection, and writing settings were preserved.
+
+# Version 1.7.8 local build: popup polish, appearance, and Undo
+
+- Full suite: 393 tests, 391 passed, two optional legacy live tests skipped, zero failures.
+- The popup uses a compact model badge, one keyboard-hint line, quieter borders, and a smaller post-Apply notice. Return is released before the notice appears. Escape registers only while a popup is visible, including loading, errors, copy-only reviews, and Undo; stale callbacks and registration conflicts have tested cleanup and fallbacks.
+- A persisted System/Light/Dark choice in the sidebar changes the app's appearance, including its panels and auxiliary windows, without changing macOS settings. Live Light and Dark views were visually checked, and System was restored afterward. All three choices remain reachable in the sidebar.
+- Undo is offered for eight seconds where the editor supports safe whole-field restoration. It holds one receipt in memory and requires the same authorized, focused, enabled, nonsecure field and exact accepted text bytes. Typing, focus/permission changes, expiry, dismissal, and newer requests clear the offer. Text is written once and verified; delayed acceptance caret work is canceled before restoring the original. Draft Undo is available until the applied draft changes.
+- Sixteen OS-boundary Undo tests cover Unicode, selected passages, changed input/focus/access, unsupported editors, metadata races, protection changes during writing, failed verification, and cancellation. Workflow tests cover polling without repeated reviews, expiry races, immediate typing before Undo, draft edits, and Escape across all popup states.
+- In a disposable native NSTextView with a synthetic Accessibility backend, the production component applied and undid a whole sentence and a selected sentence with an emoji prefix and untouched suffix. The original wording and surrounding bytes were restored, and the native fixture reported the expected caret positions. This is not a verification of arbitrary third-party editor support.
+- Desktop automation's simulated Escape did not trigger the global Carbon binding in the fixture. Shortcut lifecycle/routing was verified with injected keyboard backends; physical/global Escape delivery remains unverified. No messages were sent from another app.
+- Build 26 passed strict deep signature verification, was installed at /Applications/English Correct.app, restarted, and reached ready with automatic suggestions restored. It is a local build; no 1.7.8 GitHub release was published in this task. The separately reported ChatGPT cursor issue remains under investigation.
+
+# Earlier light blue theme
+
+- Applied the approved palette: #EDF6FF window, #F5FAFF cards, #245D94 buttons, #17324D navy body text, and #CCE5FF highlights. Navigation, secondary text, glass, controls, and auxiliary windows share the blue theme and adapt to system appearance. Reduce Transparency keeps opaque blue surfaces, and Increase Contrast retains stronger borders.
+- Suggestion actions retain solid fills even in an inactive panel. Enabled button text contrast is 6.84:1–11.07:1; highlighted changes exceed 8:1 in both appearances. Navy body text exceeds 12:1 on the opaque light window and card colors.
+- All 14 existing suggestion layout, inactive-panel footer, and correction-highlighting tests passed. A dark opaque production-view render was visually checked. Offscreen glass renders omit native compositing and are not evidence of the live glass color.
+- The signed app built, passed strict deep signature verification, was installed, and restarted. Live Write, App access, and Models views showed the blue palette. Accessibility remained granted, the local model became ready, and automatic suggestions resumed with the remembered timing and writing style.
+- This appearance update does not establish a fix for the separately reported ChatGPT cursor issue.
+
 # Version 1.7.7 delayed cursor-reset validation
 
 - Full suite: 350 tests, 348 passed, two optional legacy live tests skipped, zero failures.

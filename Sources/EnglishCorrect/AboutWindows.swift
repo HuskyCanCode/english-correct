@@ -34,6 +34,8 @@ final class AboutWindows {
         window.isReleasedWhenClosed = false
         window.titlebarAppearsTransparent = true
         window.titlebarSeparatorStyle = .none
+        window.backgroundColor = .clear
+        window.isOpaque = false
         window.center()
         return window
     }
@@ -60,16 +62,16 @@ private struct AboutView: View {
                 .font(.system(size: 40)).foregroundStyle(GlassTheme.accent)
                 .accessibilityHidden(true)
             Text("English Correct").font(.system(size: 28, weight: .medium, design: .serif))
-            Text(version).font(.callout).foregroundStyle(.secondary)
+            Text(version).font(.callout).foregroundStyle(GlassTheme.secondary)
             Text("A little help. Still your voice.\nWriting suggestions powered by models on your Mac.")
-                .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                .font(.callout).foregroundStyle(GlassTheme.secondary).multilineTextAlignment(.center)
             Button("Credits & Licenses", action: showCredits)
                 .glassAction(prominent: true).controlSize(.large)
                 .accessibilityIdentifier("about-credits")
         }
         .padding(30).frame(maxWidth: .infinity, maxHeight: .infinity)
         .background { GlassWindowBackground().ignoresSafeArea() }
-        .tint(GlassTheme.accent)
+        .foregroundStyle(GlassTheme.primary).tint(GlassTheme.controlAccent)
     }
 }
 
@@ -111,18 +113,18 @@ private struct CreditsView: View {
                     Text("With thanks to the people behind the models.")
                         .font(.headline)
                     Text("English Correct recommends the following open-weight models. Their creators retain their rights and receive the credit below.")
-                        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        .font(.callout).foregroundStyle(GlassTheme.secondary).fixedSize(horizontal: false, vertical: true)
                     ForEach(credits) { credit in
                         VStack(alignment: .leading, spacing: 12) {
                             HStack(alignment: .firstTextBaseline) {
                                 Text(credit.model.name).font(.headline)
                                 Spacer()
-                                Text(credit.model.tier).font(.caption).foregroundStyle(.secondary)
+                                Text(credit.model.tier).font(.caption).foregroundStyle(GlassTheme.secondary)
                             }
                             Text("Qwen team · Alibaba Cloud")
                                 .font(.callout).foregroundStyle(GlassTheme.accent)
                             Text("Copyright 2024 Alibaba Cloud\nApache License 2.0 · Q4_K_M quantization")
-                                .font(.caption).foregroundStyle(.secondary).lineSpacing(4)
+                                .font(.caption).foregroundStyle(GlassTheme.secondary).lineSpacing(4)
                             HStack(spacing: 16) {
                                 Button("Read license") { selectedLicense = credit }.glassAction()
                                     .accessibilityLabel("Read license for \(credit.model.name)")
@@ -135,7 +137,7 @@ private struct CreditsView: View {
                     }
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Built-in engine · llama.cpp").font(.headline)
-                        Text("MIT License · upstream build b11146").font(.caption).foregroundStyle(.secondary)
+                        Text("MIT License · upstream build b11146").font(.caption).foregroundStyle(GlassTheme.secondary)
                         Link("Engine source ↗", destination: URL(string: "https://github.com/ggml-org/llama.cpp/tree/b11146")!)
                         DisclosureGroup("Read engine and third-party licenses") {
                             Text(["llama.cpp-LICENSE", "llama.cpp-THIRD-PARTY"].compactMap { CreditResources.licenseText(named: $0) }.joined(separator: "\n\n"))
@@ -144,14 +146,14 @@ private struct CreditsView: View {
                         }
                     }.padding(20).contentSurface(cornerRadius: 18)
                     Text("License copies are included in the app and can be read offline. Model files are downloaded separately inside English Correct; older configurations may use LM Studio or Ollama. Other models you choose have their own licenses.")
-                        .font(.caption).foregroundStyle(.secondary).lineSpacing(4)
+                        .font(.caption).foregroundStyle(GlassTheme.secondary).lineSpacing(4)
                     Text("English Correct is independently developed and is not affiliated with or endorsed by the model creators.")
-                        .font(.caption).foregroundStyle(.secondary).lineSpacing(4)
+                        .font(.caption).foregroundStyle(GlassTheme.secondary).lineSpacing(4)
                 }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .background { GlassWindowBackground().ignoresSafeArea() }
-        .foregroundStyle(.primary).tint(GlassTheme.accent)
+        .foregroundStyle(GlassTheme.primary).tint(GlassTheme.controlAccent)
         .sheet(item: $selectedLicense) { credit in
             LicenseTextView(credit: credit, close: { selectedLicense = nil })
         }
@@ -167,7 +169,7 @@ private struct LicenseTextView: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Apache License 2.0").font(.headline)
-                    Text(credit.model.name).font(.caption).foregroundStyle(.secondary)
+                    Text(credit.model.name).font(.caption).foregroundStyle(GlassTheme.secondary)
                 }
                 Spacer()
                 Button("Done", action: close).glassAction(prominent: true).keyboardShortcut(.cancelAction)
@@ -188,6 +190,6 @@ private struct LicenseTextView: View {
         }
         .frame(width: 580, height: 510)
         .background { GlassWindowBackground().ignoresSafeArea() }
-        .foregroundStyle(.primary).tint(GlassTheme.accent)
+        .foregroundStyle(GlassTheme.primary).tint(GlassTheme.controlAccent)
     }
 }

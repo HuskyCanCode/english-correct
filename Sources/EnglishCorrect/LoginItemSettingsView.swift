@@ -19,7 +19,7 @@ struct LoginItemSettingsView: View {
                         Text(controller.shouldAsk ? "Open English Correct when you log in?" : "Open at login")
                             .font(.system(size: 15, weight: .semibold))
                         Text("Have English Correct ready when you sign in to your Mac. Your automatic-suggestions choice is remembered.")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(GlassTheme.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     if !controller.shouldAsk && controller.status != .requiresApproval {
@@ -43,10 +43,10 @@ struct LoginItemSettingsView: View {
                             .accessibilityIdentifier("login-item-enable")
                     }.disabled(controller.isChanging)
                     Text("You can change this later in Setup.")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .font(.system(size: 11)).foregroundStyle(GlassTheme.secondary)
                 } else {
                     Text(controller.statusMessage)
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(GlassTheme.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if controller.status == .requiresApproval {
@@ -57,7 +57,7 @@ struct LoginItemSettingsView: View {
                     }.disabled(controller.isChanging)
                 }
                 if let error = controller.errorMessage {
-                    Text(error).font(.system(size: 12)).foregroundStyle(.primary)
+                    Text(error).font(.system(size: 12)).foregroundStyle(GlassTheme.primary)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("login-item-error")
                     if controller.status != .requiresApproval {

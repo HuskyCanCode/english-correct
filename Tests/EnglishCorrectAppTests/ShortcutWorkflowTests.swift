@@ -123,7 +123,8 @@ final class ShortcutWorkflowTests: XCTestCase {
         XCTAssertEqual(fixture.backend.writes, [kAXValueAttribute, kAXSelectedTextRangeAttribute])
         XCTAssertEqual(fixture.backend.selection, NSRange(location: "She went yesterday.".utf16.count, length: 0))
         XCTAssertNil(fixture.app.externalCorrection)
-        XCTAssertFalse(panel.isShown)
+        XCTAssertTrue(panel.isShown, "Apply replaces the review with a brief Undo notice")
+        XCTAssertTrue(fixture.app.externalUndoAvailable)
         XCTAssertNil(keyboard.action)
         keyboard.pressReturn()
         XCTAssertEqual(fixture.backend.writes.count, 2)
@@ -152,7 +153,7 @@ final class ShortcutWorkflowTests: XCTestCase {
         XCTAssertNil(fixture.app.externalCorrection)
     }
 
-    func testReturnRepairsDelayedResetAfterPopupCloses() async throws {
+    func testReturnRepairsDelayedResetWhileUndoNoticeIsShown() async throws {
         for selected in [false, true] {
             let clock = TypingPauseClock()
             let fixture = try await ShortcutFixture(waitForCaretUpdate: { try await clock.wait($0) })
@@ -173,7 +174,8 @@ final class ShortcutWorkflowTests: XCTestCase {
             fixture.app.triggerShortcut()
             await waitUntil { fixture.app.externalCorrection != nil }
             keyboard.pressReturn()
-            XCTAssertFalse(panel.isShown)
+            XCTAssertTrue(panel.isShown)
+            XCTAssertTrue(fixture.app.externalUndoAvailable)
             XCTAssertNil(keyboard.action)
             await waitUntil { clock.durations.count == 1 }
             fixture.backend.selection = NSRange(location: 0, length: 0)
@@ -742,6 +744,175 @@ final class ShortcutWorkflowTests: XCTestCase {
         XCTAssertFalse(fixture.app.panel?.panel.isVisible ?? false, file: file, line: line)
     }
 
+    func testUndoRestoresWholeInputAndSelectedPassageWithoutRetainingReturn() async throws {
+        for selected in [false, true] {
+            let fixture = try await ShortcutFixture()
+            defer { fixture.close() }
+            let prefix = selected ? "👩🏽‍💻 Café\n" : ""
+            let suffix = selected ? " Keep this." : ""
+            let original = prefix + "She go yesterday." + suffix
+            fixture.backend.text = original
+            if selected {
+                fixture.backend.selection = NSRange(location: prefix.utf16.count, length: "She go yesterday.".utf16.count)
+                fixture.backend.selectionSettable = true
+            }
+            let keyboard = AcceptanceBackendStub()
+            let panel = SuggestionPanel(model: fixture.app, presentsWindows: false, acceptanceBackend: keyboard)
+            fixture.app.panel = panel
+            fixture.app.triggerShortcut()
+            await waitUntil { fixture.app.externalCorrection != nil }
+            let reviewHeight = panel.panel.frame.height
+            keyboard.pressReturn()
+            XCTAssertTrue(fixture.app.externalUndoAvailable)
+            XCTAssertNil(keyboard.action)
+            XCTAssertLessThan(panel.panel.frame.height, reviewHeight, "Undo uses a compact notice")
+            fixture.app.undoExternal()
+            XCTAssertTrue(fixture.backend.text.utf8.elementsEqual(original.utf8))
+            XCTAssertFalse(fixture.app.externalUndoAvailable)
+            XCTAssertFalse(panel.isShown)
+            let writes = fixture.backend.writes
+            fixture.app.undoExternal()
+            XCTAssertEqual(fixture.backend.writes, writes, "Undo is single use")
+        }
+    }
+
+    func testUndoSurvivesPollWithoutNewReviewAndDoesNotImmediatelyReviewRestoredText() async throws {
+        let fixture = try await ShortcutFixture(waitForAutomaticSuggestion: { _ in })
+        defer { fixture.close() }
+        fixture.app.setAutomaticSuggestions(true)
+        await waitUntil { fixture.app.externalCorrection != nil }
+        let requests = fixture.client.requests.count
+        fixture.app.applyExternal()
+        fixture.monitor.poll()
+        fixture.app.validateManualTarget()
+        await settle()
+        XCTAssertTrue(fixture.app.externalUndoAvailable)
+        XCTAssertEqual(fixture.client.requests.count, requests)
+        fixture.app.undoExternal()
+        fixture.monitor.poll()
+        await settle()
+        XCTAssertEqual(fixture.backend.text, "She go yesterday.")
+        XCTAssertEqual(fixture.client.requests.count, requests)
+        fixture.backend.text = "I has books."
+        fixture.monitor.poll()
+        await waitUntil { fixture.client.requests.count == requests + 1 }
+    }
+
+    func testUndoNoticeExpiresAndAnOldTimerCannotDismissANewerReview() async throws {
+        let clock = TypingPauseClock()
+        let fixture = try await ShortcutFixture(waitForUndoDismissal: { try await clock.wait($0) })
+        defer { fixture.close(); clock.finishAll() }
+        fixture.app.panel = SuggestionPanel(model: fixture.app, presentsWindows: false)
+        fixture.app.triggerShortcut()
+        await waitUntil { fixture.app.externalCorrection != nil }
+        fixture.app.applyExternal()
+        await waitUntil { clock.durations.count == 1 }
+        XCTAssertEqual(clock.durations, [8])
+        fixture.backend.text = "I has books."
+        fixture.app.triggerShortcut()
+        await waitUntil { fixture.app.externalCorrection != nil }
+        clock.finish()
+        await settle()
+        XCTAssertNotNil(fixture.app.externalCorrection, "An old expiry must not dismiss a newer review")
+        fixture.app.applyExternal()
+        await waitUntil { clock.durations.count == 2 }
+        clock.finish()
+        await waitUntil { !fixture.app.externalUndoAvailable }
+        XCTAssertFalse(fixture.app.panel?.isShown ?? true)
+        XCTAssertEqual(fixture.backend.text, "She went yesterday.")
+    }
+
+    func testUndoIsInvalidatedByTypingChangedFocusAndPermissions() async throws {
+        for change in ["typing", "focus", "permission"] {
+            let fixture = try await ShortcutFixture()
+            defer { fixture.close() }
+            fixture.app.triggerShortcut()
+            await waitUntil { fixture.app.externalCorrection != nil }
+            fixture.app.applyExternal()
+            XCTAssertTrue(fixture.app.externalUndoAvailable)
+            let writes = fixture.backend.writes
+            switch change {
+            case "typing": fixture.backend.text += " More."
+            case "focus": fixture.backend.focused = AXUIElementCreateApplication(93_002)
+            default: fixture.backend.isTrusted = false
+            }
+            fixture.app.validateManualTarget()
+            XCTAssertFalse(fixture.app.externalUndoAvailable, change)
+            fixture.app.undoExternal()
+            XCTAssertEqual(fixture.backend.writes, writes, change)
+        }
+    }
+
+    func testUndoClickAfterImmediateTypingPreservesNewInput() async throws {
+        let fixture = try await ShortcutFixture()
+        defer { fixture.close() }
+        fixture.app.triggerShortcut()
+        await waitUntil { fixture.app.externalCorrection != nil }
+        fixture.app.applyExternal()
+        let writes = fixture.backend.writes
+        fixture.backend.text += " More."
+        let text = fixture.backend.text
+        fixture.app.undoExternal()
+        XCTAssertEqual(fixture.backend.text, text)
+        XCTAssertEqual(fixture.backend.writes, writes)
+        XCTAssertFalse(fixture.app.externalUndoAvailable)
+        XCTAssertTrue(fixture.app.externalStatus.contains("Undo is no longer available"))
+    }
+
+    func testDraftUndoRestoresExactOriginalAndNeverOverwritesNewTyping() async throws {
+        let fixture = try await ShortcutFixture()
+        defer { fixture.close() }
+        let original = "👩🏽‍💻 Zoe\u{301} go yesterday."
+        let revised = "👩🏽‍💻 Zoe\u{301} went yesterday."
+        fixture.app.draft = original
+        fixture.app.draftCorrection = Correction(original: original, corrected: revised, explanation: "")
+        fixture.app.applyDraft()
+        XCTAssertTrue(fixture.app.draftUndoAvailable)
+        fixture.app.undoDraft()
+        XCTAssertTrue(fixture.app.draft.utf8.elementsEqual(original.utf8))
+        XCTAssertFalse(fixture.app.draftUndoAvailable)
+        fixture.app.draftCorrection = Correction(original: original, corrected: revised, explanation: "")
+        fixture.app.applyDraft()
+        fixture.app.draft += " More."
+        fixture.app.undoDraft()
+        XCTAssertEqual(fixture.app.draft, revised + " More.")
+    }
+
+    func testEscapeDismissesLoadingReviewCopyOnlyAndUndoWithoutChangingText() async throws {
+        for phase in ["loading", "review", "copy-only", "undo", "error"] {
+            let fixture = try await ShortcutFixture()
+            defer { fixture.close() }
+            let keyboard = AcceptanceBackendStub()
+            let escape = PopupDismissalBackendStub()
+            let panel = SuggestionPanel(model: fixture.app, presentsWindows: false,
+                                        acceptanceBackend: keyboard, dismissalBackend: escape)
+            fixture.app.panel = panel
+            if phase == "loading" { fixture.client.holdResponses = true }
+            if phase == "copy-only" { fixture.backend.valueSettable = false }
+            if phase == "error" { fixture.client.failure = .invalidResponse }
+            fixture.app.triggerShortcut()
+            if phase == "loading" { await waitUntil { fixture.client.pendingCount == 1 } }
+            else if phase == "error" { await waitUntil { fixture.app.externalNeedsSetup && !fixture.app.externalBusy } }
+            else { await waitUntil { fixture.app.externalCorrection != nil } }
+            if phase == "undo" { fixture.app.applyExternal() }
+            let text = fixture.backend.text
+            let writes = fixture.backend.writes
+            XCTAssertNotNil(escape.action, phase)
+            escape.action?()
+            XCTAssertFalse(panel.isShown, phase)
+            XCTAssertNil(escape.action, phase)
+            XCTAssertNil(keyboard.action, phase)
+            XCTAssertFalse(fixture.app.externalUndoAvailable)
+            XCTAssertEqual(fixture.backend.text, text, phase)
+            XCTAssertEqual(fixture.backend.writes, writes, phase)
+            if phase == "loading" {
+                fixture.client.finish()
+                await waitUntil { fixture.client.returnedResponses == 1 }
+                XCTAssertFalse(panel.isShown)
+            }
+        }
+    }
+
     private func waitUntil(timeoutSeconds: TimeInterval = 1,
                            file: StaticString = #filePath, line: UInt = #line,
                            _ condition: () -> Bool) async {
@@ -774,6 +945,9 @@ private final class ShortcutFixture {
          },
          waitForAutomaticSuggestion: @escaping (Double) async throws -> Void = { seconds in
              try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+         },
+         waitForUndoDismissal: @escaping (Double) async throws -> Void = { seconds in
+             try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
          }) async throws {
         defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defaults.removePersistentDomain(forName: suite)
@@ -791,6 +965,7 @@ private final class ShortcutFixture {
         let selectedModel = liveModel ?? "test-local-model"
         app = AppModel(defaults: defaults, monitor: monitor, startMonitoring: false,
                        waitForAutomaticSuggestion: waitForAutomaticSuggestion,
+                       waitForUndoDismissal: waitForUndoDismissal,
                        listModels: { configuration in
             if liveModel != nil { return try await LocalAIClient(configuration: configuration).models() }
             return [selectedModel]
@@ -949,5 +1124,14 @@ private final class TypingPauseClock {
         let unfinished = pending
         pending.removeAll()
         unfinished.forEach { $0.resume(throwing: CancellationError()) }
+    }
+}
+
+@MainActor
+private final class PopupDismissalBackendStub: SuggestionDismissalBackend {
+    var action: (@MainActor () -> Void)?
+    func registerDismissal(action: @escaping @MainActor () -> Void) throws -> ShortcutRegistrationToken {
+        self.action = action
+        return ShortcutRegistrationToken { [weak self] in self?.action = nil }
     }
 }

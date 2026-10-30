@@ -18,7 +18,7 @@ struct SetupGuideView: View {
                 Text("A little setup. Better writing.")
                     .font(.system(size: 32, weight: .medium, design: .serif))
                 Text("Set up your local AI app, choose a model, and decide where and when you want help.")
-                    .font(.system(size: 14)).foregroundStyle(.secondary)
+                    .font(.system(size: 14)).foregroundStyle(GlassTheme.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             LocalModelSetupView(library: model.library)
@@ -36,7 +36,7 @@ struct SetupGuideView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(readinessTitle).font(.system(size: 14, weight: .semibold))
                     Text("Checks use a sample sentence, never text from another app.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(GlassTheme.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 8)
@@ -94,7 +94,7 @@ struct SetupGuideView: View {
             LoginItemSettingsView(controller: loginItem)
             suggestionChoice
             Text("Accessibility and app access are optional for writing inside English Correct. Some custom text fields do not support suggestions; use Copy when direct replacement is unavailable.")
-                .font(.system(size: 12)).foregroundStyle(.secondary)
+                .font(.system(size: 12)).foregroundStyle(GlassTheme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -104,7 +104,7 @@ struct SetupGuideView: View {
             Text("Would you like automatic suggestions?")
                 .font(.system(size: 18, weight: .semibold))
             Text("When on, English Correct checks the focused field after you pause typing, only in apps you allow. You always review changes before applying them.")
-                .font(.system(size: 13)).foregroundStyle(.secondary)
+                .font(.system(size: 13)).foregroundStyle(GlassTheme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             AutomaticSuggestionTimingView(model: model)
             if !model.readyInOtherApps {
@@ -126,7 +126,7 @@ struct SetupGuideView: View {
                     .accessibilityIdentifier("setup-in-app")
                 Spacer()
                 Text("Your choice is remembered. Suggestions resume after setup checks pass.")
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .font(.system(size: 11)).foregroundStyle(GlassTheme.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }.padding(20).contentSurface(cornerRadius: 18, tinted: true)
@@ -145,10 +145,10 @@ struct SetupGuideView: View {
                     Spacer()
                     Text(ready ? "Ready" : (checking ? "Checking…" : "Needs attention"))
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(ready ? GlassTheme.accent : .secondary)
+                        .foregroundStyle(ready ? GlassTheme.accent : GlassTheme.secondary)
                 }
                 content()
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .font(.system(size: 12)).foregroundStyle(GlassTheme.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }.padding(18)

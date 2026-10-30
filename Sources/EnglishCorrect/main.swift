@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let loginItem = LoginItemController()
     private let aboutWindows = AboutWindows()
     func applicationDidFinishLaunching(_ notification: Notification) {
+        _ = AppearanceController.shared
         model = AppModel()
         model.panel = SuggestionPanel(model: model)
         model.onShortcutChanged = { [weak self] choice in self?.registerShortcut(choice) }

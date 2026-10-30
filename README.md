@@ -95,7 +95,7 @@ Opening at login does not grant app access or enable automatic suggestions. The 
 
 1. Open **Write** and enter or paste text in **Your draft**.
 2. Choose **Formal**, **Casual**, or **Slang**, then choose **Check writing**. Casual is the default; the app remembers your choice.
-3. Review **Suggested revision**. Added and changed words are highlighted in green and underlined; the edit summary also identifies removed wording.
+3. Review **Suggested revision**. Added and changed words are highlighted and underlined; the edit summary also identifies removed wording.
 4. Choose **Use suggestion** to update the draft, or **Dismiss** to leave it unchanged. Copy text from the writing area when finished.
 
 ### Check writing in an allowed app
@@ -108,9 +108,13 @@ Opening at login does not grant app access or enable automatic suggestions. The 
 
 **Slang** favors playful, conversational expressions over texting abbreviations. For example, “Let me think” can become “Let me noodle on it,” and “I am very busy today” can become “I’m swamped today.” The model should keep the original meaning and use an idiom only where it fits. Wording varies by model; review the result before applying.
 
-After applying with Return or Apply, the cursor is placed immediately after the inserted correction so you can continue typing. For a selected passage, it stays before untouched following text. The app briefly rechecks editors that reset the cursor while updating. Typing, navigation, clicks, scrolling, or changes to the input stop that repair. Editors that reject cursor positioning keep their own behavior.
+After applying with Return or Apply, the app attempts to place the cursor immediately after the inserted correction so you can continue typing. For a selected passage, the target position is before untouched following text. The app briefly rechecks editors that reset the cursor while updating. Typing, navigation, clicks, scrolling, or changes to the input stop that repair. Editors that reject cursor positioning keep their own behavior. A reported reset to the beginning in ChatGPT remains unresolved; this source update does not claim to fix it.
 
 Return accepts only an editable suggestion while its popup is visible. It is released when the popup closes, and is not reserved for loading, error, or copy-only popups. If Return is already reserved, the popup tells you to use Apply.
+
+**In the 1.7.8 source build:** Escape dismisses a visible popup, including loading and error messages. After Apply, a compact **Undo** notice appears for eight seconds where supported. Undo restores only the exact original field while its corrected text is unchanged; typing, changing fields, or revoking access removes the offer. Return is released before the Undo notice appears. Write also offers Undo until you edit the applied draft.
+
+Choose **System**, **Light**, or **Dark** under **Appearance** at the bottom of the sidebar. The 1.7.8 source build remembers this choice for the app and suggestion windows; System follows your Mac. These controls change only English Correct's appearance.
 
 Apply is unavailable when the field cannot safely accept a replacement; use Copy and paste it yourself. Long suggestions scroll. Copy and Apply use plain corrected text without the visual highlighting. If the shortcut conflicts with another app, choose **⌃⌥⌘E (Control–Option–Command–E)** in Write, App access, or Setup.
 
@@ -156,7 +160,7 @@ Standard native text fields and plain multiline controls are supported when they
 
 A correction is limited to **4,000 characters / 32,000 UTF-8 bytes**. A shorter selection can be checked within a larger field up to 100,000 UTF-16 units. The in-app Check writing button requires 3–4,000 characters.
 
-On macOS 26+, the app uses native Liquid Glass. On macOS 14 and 15 it uses standard materials and bordered controls. Light/dark appearance, Reduce Transparency, and Increase Contrast have matching styles. Screenshots show one appearance; controls may look different on your Mac.
+The 1.7.8 source build uses a Soft Blue light palette: off-white backgrounds, mist-blue buttons and highlights, and navy text. Dark appearance uses layered blues and pale lavender. Both use translucent window backgrounds with native macOS backdrop blur. Text and suggestion actions stay crisp and opaque. Reduce Transparency uses solid backgrounds, and Increase Contrast keeps stronger outlines. On macOS 26+, controls use native Liquid Glass; macOS 14 and 15 use bordered controls. Screenshots may flatten native backdrop effects, and controls may look different on your Mac.
 
 Review all revisions: local model output can be incorrect. Fast has been tested with live download and inference. Pro and Ollama have automated protocol tests, but a Pro download and live Ollama integration have not been verified. Real cross-app replacement through the live OS UI also remains unverified; see the full [verification scope and limitations](TEST-RESULTS.md).
 

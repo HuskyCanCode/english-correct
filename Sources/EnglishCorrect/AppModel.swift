@@ -75,6 +75,7 @@ final class AppModel: ObservableObject {
     @Published var draftCorrection: Correction?
     @Published var draftBusy = false
     @Published var draftStatus = ""
+    @Published private(set) var draftUndoAvailable = false
     @Published var externalCorrection: Correction?
     @Published var externalApp = ""
     @Published var externalStatus = ""
@@ -82,6 +83,7 @@ final class AppModel: ObservableObject {
     @Published var externalScope = ""
     @Published var externalCanApply = false
     @Published var externalNeedsSetup = false
+    @Published private(set) var externalUndoAvailable = false
     @Published var shortcut: CorrectionShortcut = .optionCommandE {
         didSet {
             guard shortcut != oldValue, !isRestoringSettings else { return }
@@ -103,10 +105,16 @@ final class AppModel: ObservableObject {
     private var permissionTimer: Timer?
     private var manualTimer: Timer?
     private var manualRequestActive = false
+    private var appliedCorrection: AppliedCorrection?
+    private var undoNoticeTask: Task<Void, Never>?
+    private var undoNoticeEpoch = UUID()
+    private var isPerformingUndo = false
+    private var draftUndo: (original: String, applied: String)?
     private enum ExternalSettingsDestination { case appAccess, models, setup }
     private var externalSettingsDestination: ExternalSettingsDestination = .appAccess
     private let correctText: (String, LocalAIConfiguration) async throws -> Correction
     private let waitForAutomaticSuggestion: (Double) async throws -> Void
+    private let waitForUndoDismissal: (Double) async throws -> Void
     private let listModels: (LocalAIConfiguration) async throws -> [String]
     private var gate = SuggestionGate()
     private var snapshot: FieldSnapshot?
@@ -121,6 +129,9 @@ final class AppModel: ObservableObject {
     init(defaults: UserDefaults = .standard, monitor: AccessibilityMonitor? = nil, modelLibrary: ModelLibrary? = nil,
          startMonitoring: Bool = true,
          waitForAutomaticSuggestion: @escaping (Double) async throws -> Void = { seconds in
+             try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+         },
+         waitForUndoDismissal: @escaping (Double) async throws -> Void = { seconds in
              try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
          },
          listModels: @escaping (LocalAIConfiguration) async throws -> [String] = { config in
@@ -141,6 +152,7 @@ final class AppModel: ObservableObject {
         self.correctText = correctText
         self.listModels = listModels
         self.waitForAutomaticSuggestion = waitForAutomaticSuggestion
+        self.waitForUndoDismissal = waitForUndoDismissal
         library = modelLibrary ?? ModelLibrary(defaults: defaults)
         if let data = defaults.data(forKey: "appPermissions"), let saved = try? JSONDecoder().decode([AppPermission].self, from: data) { permissions = saved }
         if let raw = defaults.string(forKey: "provider"), let saved = LocalProvider(rawValue: raw) { provider = saved }
@@ -162,7 +174,12 @@ final class AppModel: ObservableObject {
         isRestoringSettings = false
         library.configure(configuration)
         self.monitor.onCapture = { [weak self] value in
-            guard let self, !self.manualRequestActive else { return }
+            guard let self, !self.isPerformingUndo else { return }
+            if self.appliedCorrection != nil {
+                self.validateExternalUndo()
+                if self.appliedCorrection != nil { return }
+            }
+            guard !self.manualRequestActive else { return }
             self.received(value)
         }
         self.monitor.onStatus = { [weak self] in self?.monitoringStatus = $0 }
@@ -196,6 +213,7 @@ final class AppModel: ObservableObject {
         connectionTask?.cancel()
         setupTask?.cancel()
         scheduledSetupTask?.cancel()
+        undoNoticeTask?.cancel()
     }
 
     var configuration: LocalAIConfiguration { LocalAIConfiguration(provider: provider, baseURL: baseURL, model: model, style: writingStyle) }
@@ -450,6 +468,8 @@ final class AppModel: ObservableObject {
     }
 
     func draftChanged() {
+        draftUndo = nil
+        draftUndoAvailable = false
         draftEpoch = UUID()
         draftTask?.cancel()
         draftBusy = false
@@ -490,12 +510,30 @@ final class AppModel: ObservableObject {
 
     func applyDraft() {
         guard let correction = draftCorrection, draft.utf8.elementsEqual(correction.original.utf8) else { draftChanged(); return }
+        let original = draft
         draft = correction.corrected
         draftChanged()
+        draftUndo = (original, correction.corrected)
+        draftUndoAvailable = true
         draftStatus = "Suggestion applied."
     }
 
+    func undoDraft() {
+        guard let saved = draftUndo, draft.utf8.elementsEqual(saved.applied.utf8) else {
+            draftUndo = nil
+            draftUndoAvailable = false
+            return
+        }
+        draft = saved.original
+        draftStatus = "Original wording restored."
+    }
+
     func invalidateExternal() {
+        undoNoticeEpoch = UUID()
+        undoNoticeTask?.cancel()
+        undoNoticeTask = nil
+        appliedCorrection = nil
+        externalUndoAvailable = false
         gate.invalidate()
         externalTask?.cancel()
         externalTask = nil
@@ -615,6 +653,7 @@ final class AppModel: ObservableObject {
     }
 
     func validateManualTarget() {
+        if appliedCorrection != nil { validateExternalUndo(); return }
         guard manualRequestActive, let value = snapshot else { return }
         guard let current = monitor.captureCurrent(intent: .shortcut), current.isSame(as: value) else {
             // Editing ends this review. In particular, deleting a field in
@@ -627,8 +666,9 @@ final class AppModel: ObservableObject {
     func applyExternal() {
         guard let value = snapshot, let correction = externalCorrection, externalCanApply else { return }
         do {
-            try monitor.apply(correction, to: value)
+            let applied = try monitor.apply(correction, to: value)
             invalidateExternal()
+            showUndoNotice(for: applied)
         } catch {
             if (error as? AccessibilityMonitorError) == .sourceChanged, monitor.lastCaptureWasEmpty {
                 invalidateExternal()
@@ -638,6 +678,48 @@ final class AppModel: ObservableObject {
             externalCorrection = nil
             externalBusy = false
             panel?.show(near: value.frame)
+        }
+    }
+
+    private func showUndoNotice(for applied: AppliedCorrection) {
+        guard monitor.canUndo(applied) else { return }
+        appliedCorrection = applied
+        externalUndoAvailable = true
+        externalApp = applied.appName
+        panel?.show(near: applied.frame)
+        let epoch = undoNoticeEpoch
+        let wait = waitForUndoDismissal
+        undoNoticeTask = Task { [weak self] in
+            do { try await wait(8) }
+            catch { return }
+            guard let self, !Task.isCancelled, self.undoNoticeEpoch == epoch else { return }
+            self.invalidateExternal()
+        }
+    }
+
+    private func validateExternalUndo() {
+        guard let applied = appliedCorrection else { return }
+        if !monitor.canUndo(applied) { invalidateExternal() }
+    }
+
+    func undoExternal() {
+        guard let applied = appliedCorrection else { return }
+        invalidateExternal()
+        isPerformingUndo = true
+        defer { isPerformingUndo = false }
+        do {
+            try monitor.undo(applied)
+            // Synchronize the monitor without immediately reviewing the same
+            // original wording again. The next user edit resumes normal checks.
+            monitor.poll()
+        } catch {
+            externalApp = applied.appName
+            if [.writeFailed, .verificationFailed].contains(error as? AccessibilityMonitorError) {
+                externalStatus = "The app could not confirm Undo. Check your input before continuing."
+            } else {
+                externalStatus = "Undo is no longer available. The input, app, or its permissions may have changed."
+            }
+            panel?.show(near: applied.frame)
         }
     }
 

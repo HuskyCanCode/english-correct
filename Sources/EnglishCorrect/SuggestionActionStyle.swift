@@ -11,20 +11,13 @@ struct SuggestionActionStyle: ButtonStyle {
     private var dark: Bool { colorScheme == .dark }
 
     private var foreground: Color {
-        if !isEnabled { return Color(white: dark ? 0.63 : 0.40) }
-        if prominent { return dark ? Color(red: 0.07, green: 0.19, blue: 0.16) : .white }
-        return dark ? Color(red: 0.88, green: 0.98, blue: 0.94)
-                    : Color(red: 0.08, green: 0.24, blue: 0.20)
+        if !isEnabled { return GlassTheme.secondary }
+        return prominent ? GlassTheme.accentForeground : GlassTheme.primary
     }
 
     private var background: Color {
-        if !isEnabled { return Color(white: dark ? 0.22 : 0.88) }
-        if prominent {
-            return dark ? Color(red: 0.48, green: 0.82, blue: 0.72)
-                        : Color(red: 0.10, green: 0.34, blue: 0.29)
-        }
-        return dark ? Color(red: 0.10, green: 0.25, blue: 0.21)
-                    : Color(red: 0.85, green: 0.94, blue: 0.90)
+        if !isEnabled { return GlassTheme.disabledActionSurface }
+        return prominent ? GlassTheme.prominentActionSurface : GlassTheme.actionSurface
     }
 
     func makeBody(configuration: Configuration) -> some View {

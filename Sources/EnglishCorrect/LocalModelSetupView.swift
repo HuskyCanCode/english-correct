@@ -25,7 +25,7 @@ struct LocalModelSetupView: View {
                     Text("Download Fast or Pro, then choose Use. English Correct starts the model for you—no extra app or server setup.")
                         .font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
                     Text("Only model downloads need internet. Your writing is checked on this Mac.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(GlassTheme.secondary)
                     if !library.serverReady && !library.checking {
                         Text(library.status).font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
                         Button("Check again") { library.refresh() }.disabled(library.isBusy)
@@ -48,7 +48,7 @@ struct LocalModelSetupView: View {
                     Text(library.serverReady
                          ? "Ready to download and use models. Keep \(providerName)’s local server running while you write."
                          : "English Correct needs \(providerName) to download and run models on your Mac. It is a separate, free download.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(GlassTheme.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -62,7 +62,7 @@ struct LocalModelSetupView: View {
                 }.font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
                 if provider == .lmStudio {
                     Text("If Developer is hidden, enable Developer mode in LM Studio’s settings. Opening LM Studio alone does not start its server.")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .font(.system(size: 11)).foregroundStyle(GlassTheme.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -87,12 +87,12 @@ struct LocalModelSetupView: View {
                 Text(issue == .connectionFailed
                      ? "\(providerName)’s local server is not available. Complete the steps above, then check again."
                      : issue.localizedDescription)
-                    .font(.system(size: 12)).foregroundStyle(.primary)
+                    .font(.system(size: 12)).foregroundStyle(GlassTheme.primary)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("local-runtime-issue")
             }
             if let launchError {
-                Text(launchError).font(.system(size: 12)).foregroundStyle(.primary)
+                Text(launchError).font(.system(size: 12)).foregroundStyle(GlassTheme.primary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if !library.serverReady && provider == .lmStudio {

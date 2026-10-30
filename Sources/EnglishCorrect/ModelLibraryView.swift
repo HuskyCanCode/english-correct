@@ -9,13 +9,13 @@ struct ModelLibraryView: View {
         VStack(alignment: .leading, spacing: 23) {
             VStack(alignment: .leading, spacing: 10) {
                 Text("A model that fits your Mac.").font(.system(size: 34, weight: .medium, design: .serif))
-                Text("Choose a lighter model for quick edits, or a larger one for more demanding writing. Both are free to download and run locally.").font(.system(size: 14)).foregroundStyle(.secondary).lineSpacing(4)
+                Text("Choose a lighter model for quick edits, or a larger one for more demanding writing. Both are free to download and run locally.").font(.system(size: 14)).foregroundStyle(GlassTheme.secondary).lineSpacing(4)
             }
             LocalModelSetupView(library: library)
             if appModel.provider != .builtIn {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("You can now use English Correct without \(appModel.provider.displayName). Existing model files stay in that app.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(GlassTheme.secondary)
                     Button("Use built-in AI instead") { appModel.useBuiltInAI() }.disabled(library.isBusy)
                 }
             }
@@ -29,18 +29,18 @@ struct ModelLibraryView: View {
             }
             HStack(alignment: .top, spacing: 12) {
                 if library.checking { ProgressView().controlSize(.small) }
-                Text(library.status).font(.system(size: 12)).foregroundStyle(.secondary).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                Text(library.status).font(.system(size: 12)).foregroundStyle(GlassTheme.secondary).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
                 Button("Refresh", systemImage: "arrow.clockwise") { library.refresh() }
                     .glassAction().disabled(library.checking || library.isBusy)
             }
             VStack(alignment: .leading, spacing: 12) {
                 Label("Download once. Write locally.", systemImage: "lock.shield").font(.system(size: 14, weight: .semibold)).foregroundStyle(GlassTheme.accent)
-                Text("Downloads need internet access and are handled by \(appModel.provider.displayName). Model files come from the linked publisher or Ollama registry; your writing is not included in the download request.").font(.system(size: 12)).foregroundStyle(.secondary).lineSpacing(4)
-                Text("Sizes are approximate and vary by provider. Memory figures are our recommendations. Speed and correction quality depend on your Mac and the text; Fast and Pro are local presets, with no subscription.").font(.system(size: 12)).foregroundStyle(.secondary).lineSpacing(4)
+                Text("Downloads need internet access and are handled by \(appModel.provider.displayName). Model files come from the linked publisher or Ollama registry; your writing is not included in the download request.").font(.system(size: 12)).foregroundStyle(GlassTheme.secondary).lineSpacing(4)
+                Text("Sizes are approximate and vary by provider. Memory figures are our recommendations. Speed and correction quality depend on your Mac and the text; Fast and Pro are local presets, with no subscription.").font(.system(size: 12)).foregroundStyle(GlassTheme.secondary).lineSpacing(4)
                 if appModel.provider == .lmStudio {
-                    Text("Requires LM Studio 0.4 or newer with its local server running. Use LM Studio to pause or cancel a download; Stop checking only stops the progress display here.").font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(3)
+                    Text("Requires LM Studio 0.4 or newer with its local server running. Use LM Studio to pause or cancel a download; Stop checking only stops the progress display here.").font(.system(size: 11)).foregroundStyle(GlassTheme.secondary).lineSpacing(3)
                 } else if appModel.provider == .ollama {
-                    Text("Start Ollama before downloading. A stopped transfer can reuse partial files when you retry.").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text("Start Ollama before downloading. A stopped transfer can reuse partial files when you retry.").font(.system(size: 11)).foregroundStyle(GlassTheme.secondary)
                 }
             }.padding(19).contentSurface(cornerRadius: 18, tinted: false)
         }
@@ -75,9 +75,9 @@ struct ModelLibraryView: View {
             }
             VStack(alignment: .leading, spacing: 6) {
                 Text(item.tier).font(.system(size: 30, weight: .medium, design: .serif))
-                Text(item.name).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
+                Text(item.name).font(.system(size: 12, weight: .medium)).foregroundStyle(GlassTheme.secondary)
             }
-            Text(item.summary).font(.system(size: 13)).foregroundStyle(.secondary).lineSpacing(4).frame(minHeight: 62, alignment: .top)
+            Text(item.summary).font(.system(size: 13)).foregroundStyle(GlassTheme.secondary).lineSpacing(4).frame(minHeight: 62, alignment: .top)
             Divider()
             VStack(alignment: .leading, spacing: 10) {
                 Label("About \(formatSize(item.downloadBytes(for: appModel.provider))) to download", systemImage: "arrow.down.circle")
@@ -95,12 +95,12 @@ struct ModelLibraryView: View {
                 VStack(alignment: .leading, spacing: 7) {
                     if let fraction = update.fraction { ProgressView(value: fraction) } else { ProgressView().controlSize(.small) }
                     if let complete = update.completedBytes, let total = update.totalBytes {
-                        Text("\(formatSize(complete)) of \(formatSize(total))").font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+                        Text("\(formatSize(complete)) of \(formatSize(total))").font(.system(size: 10, design: .monospaced)).foregroundStyle(GlassTheme.secondary)
                     }
                 }
             }
             if let message = library.cardMessages[item.id] {
-                Text(message).font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(3).textSelection(.enabled)
+                Text(message).font(.system(size: 11)).foregroundStyle(GlassTheme.secondary).lineSpacing(3).textSelection(.enabled)
             }
             Spacer(minLength: 0)
             if deleting {
@@ -122,7 +122,7 @@ struct ModelLibraryView: View {
                     .glassAction(prominent: true).controlSize(.large).frame(maxWidth: .infinity).disabled(library.isBusy || library.checking || !library.serverReady)
                 if !library.serverReady {
                     Text("Connect \(appModel.provider.displayName) above to download.")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .font(.system(size: 11)).foregroundStyle(GlassTheme.secondary)
                 }
                 if library.savedJob(item) != nil {
                     Button("Resume checking") { library.resume(item) }.glassAction().font(.system(size: 11)).disabled(library.isBusy || library.checking || !library.serverReady)

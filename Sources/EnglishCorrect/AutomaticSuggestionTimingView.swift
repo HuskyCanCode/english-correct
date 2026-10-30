@@ -31,7 +31,7 @@ struct AutomaticSuggestionTimingView: View {
                 Text("Automatic suggestion delay")
             }.accessibilityValue("\(model.automaticSuggestionDelay.formatted(.number.precision(.fractionLength(1)))) seconds")
             Text("Wait 0.3–10 seconds after you stop typing before checking. The model then needs a moment to prepare the suggestion. Keyboard shortcuts check immediately.")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .font(.system(size: 11)).foregroundStyle(GlassTheme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }

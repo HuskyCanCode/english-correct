@@ -116,7 +116,7 @@ private final class ShortcutCallbackContext {
 }
 
 @MainActor
-final class CarbonShortcutBackend: ShortcutRegistrationBackend, SuggestionAcceptanceBackend {
+final class CarbonShortcutBackend: ShortcutRegistrationBackend, SuggestionAcceptanceBackend, SuggestionDismissalBackend {
     private static var nextID: UInt32 = 0
 
     func register(_ shortcut: CorrectionShortcut, action: @escaping @MainActor () -> Void) throws -> ShortcutRegistrationToken {
@@ -129,6 +129,10 @@ final class CarbonShortcutBackend: ShortcutRegistrationBackend, SuggestionAccept
 
     func registerAcceptance(action: @escaping @MainActor () -> Void) throws -> ShortcutRegistrationToken {
         try registerKey(UInt32(kVK_Return), modifiers: 0, action: action)
+    }
+
+    func registerDismissal(action: @escaping @MainActor () -> Void) throws -> ShortcutRegistrationToken {
+        try registerKey(UInt32(kVK_Escape), modifiers: 0, action: action)
     }
 
     private func registerKey(_ keyCode: UInt32, modifiers: UInt32,
@@ -197,6 +201,49 @@ final class SuggestionAcceptanceShortcut {
     }
 
     func deactivate() {
+        registration?.cancel()
+        registration = nil
+        errorMessage = nil
+    }
+}
+
+@MainActor
+protocol SuggestionDismissalBackend {
+    func registerDismissal(action: @escaping @MainActor () -> Void) throws -> ShortcutRegistrationToken
+}
+
+/// Escape belongs to the typing app whenever there is no visible popup.
+@MainActor
+final class SuggestionDismissalShortcut {
+    private let backend: SuggestionDismissalBackend
+    private var registration: ShortcutRegistrationToken?
+    private var bindingID: UUID?
+    private(set) var errorMessage: String?
+    var isRegistered: Bool { registration != nil }
+
+    init(backend: SuggestionDismissalBackend? = nil) {
+        self.backend = backend ?? CarbonShortcutBackend()
+    }
+
+    func activate(action: @escaping @MainActor () -> Void) {
+        deactivate()
+        let bindingID = UUID()
+        self.bindingID = bindingID
+        do {
+            registration = try backend.registerDismissal { [weak self] in
+                guard let self, self.bindingID == bindingID, self.registration != nil else { return }
+                action()
+            }
+        } catch {
+            self.bindingID = nil
+            errorMessage = "Escape is unavailable. Use the close button to dismiss this suggestion."
+        }
+    }
+
+    func deactivate() {
+        // Invalidate first so even an already queued callback cannot reach a
+        // replacement popup while the old registration is being cleaned up.
+        bindingID = nil
         registration?.cancel()
         registration = nil
         errorMessage = nil

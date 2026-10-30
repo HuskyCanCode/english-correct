@@ -7,14 +7,19 @@ final class SuggestionPanel {
     private weak var model: AppModel?
     private let presentsWindows: Bool
     private let acceptance: SuggestionAcceptanceShortcut
+    private let dismissal: SuggestionDismissalShortcut
     private let allowsShortcutRegistration: Bool
+    private let allowsDismissalRegistration: Bool
     private(set) var isShown = false
 
-    init(model: AppModel, presentsWindows: Bool = true, acceptanceBackend: SuggestionAcceptanceBackend? = nil) {
+    init(model: AppModel, presentsWindows: Bool = true, acceptanceBackend: SuggestionAcceptanceBackend? = nil,
+         dismissalBackend: SuggestionDismissalBackend? = nil) {
         self.model = model
         self.presentsWindows = presentsWindows
         self.acceptance = SuggestionAcceptanceShortcut(backend: acceptanceBackend)
+        self.dismissal = SuggestionDismissalShortcut(backend: dismissalBackend)
         self.allowsShortcutRegistration = presentsWindows || acceptanceBackend != nil
+        self.allowsDismissalRegistration = presentsWindows || dismissalBackend != nil
         panel = NonactivatingPanel(contentRect: NSRect(x: 0, y: 0, width: SuggestionMetrics.width, height: 280), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.title = "English Correct suggestion"
         panel.setAccessibilityIdentifier("english-correct-suggestion-panel")
@@ -30,6 +35,7 @@ final class SuggestionPanel {
 
     func show(near frame: CGRect?) {
         acceptance.deactivate()
+        dismissal.deactivate()
         isShown = false
         guard let model, let primaryScreen = NSScreen.screens.first else { return }
         let canAccept = allowsShortcutRegistration && model.externalCorrection?.hasChanges == true
@@ -39,14 +45,15 @@ final class SuggestionPanel {
         let screen = NSScreen.screens.first { screen in converted.map { screen.frame.intersects($0) } ?? false } ?? NSScreen.main ?? primaryScreen
         let visible = screen.visibleFrame.insetBy(dx: 12, dy: 12)
         let width = min(SuggestionMetrics.width, visible.width)
-        let view = SuggestionView(
+        var view = SuggestionView(
             presentation: SuggestionPresentation(model: model), width: width,
-            acceptanceHint: canAccept ? "Press Return to apply." : nil,
+            acceptanceHint: canAccept ? "Return to apply" : nil,
             styleChanged: { [weak model] in model?.writingStyle = $0 },
             dismiss: { [weak model] in model?.dismissExternal() },
             copy: { [weak model] in model?.copyExternal() },
             apply: { [weak model] in model?.applyExternal() },
-            openSettings: { [weak model] in model?.openExternalSettings() }
+            openSettings: { [weak model] in model?.openExternalSettings() },
+            undo: { [weak model] in model?.undoExternal() }
         )
         func render(_ view: SuggestionView) {
             // Measure a fresh, immutable presentation. Measuring the old observed
@@ -81,11 +88,17 @@ final class SuggestionPanel {
                 model.applyExternal()
             }
             if let error = acceptance.errorMessage {
-                var fallback = view
-                fallback.acceptanceHint = error
-                render(fallback)
+                view.acceptanceHint = error
             }
         }
+        if allowsDismissalRegistration {
+            dismissal.activate { [weak self, weak model] in
+                guard let self, self.isShown, !self.presentsWindows || self.panel.isVisible else { return }
+                model?.dismissExternal()
+            }
+            view.dismissalHint = dismissal.isRegistered ? "Esc to dismiss" : dismissal.errorMessage
+        }
+        if canAccept || allowsDismissalRegistration { render(view) }
     }
 
     static func placement(near frame: CGRect?, in visible: CGRect, size: CGSize) -> CGRect {
@@ -102,6 +115,7 @@ final class SuggestionPanel {
     func hide() {
         isShown = false
         acceptance.deactivate()
+        dismissal.deactivate()
         panel.orderOut(nil)
     }
 }

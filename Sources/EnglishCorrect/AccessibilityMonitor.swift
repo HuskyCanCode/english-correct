@@ -34,7 +34,15 @@ private final class NativeAccessibilityBackend: AccessibilityBackend {
     }
 
     func hasUserInteraction(since uptime: TimeInterval) -> Bool {
-        CaretInputActivity.hasInteraction(since: uptime)
+        let result = CaretInputActivity.hasInteraction(since: uptime)
+        if result, CaretTrace.enabled {
+            var fields = Dictionary(uniqueKeysWithValues: CaretInputActivity.observedEventTypes.map {
+                ("age_\($0.rawValue)", String(CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: $0)))
+            })
+            fields["since"] = String(uptime)
+            CaretTrace.record("input.activity", fields)
+        }
+        return result
     }
 
     func focusedElement(for pid: pid_t) -> AXUIElement? {
@@ -113,6 +121,16 @@ struct FieldSnapshot {
             text.utf8.elementsEqual(other.text.utf8) &&
             fullText.utf8.elementsEqual(other.fullText.utf8)
     }
+}
+
+/// A memory-only receipt for a verified correction. Text stays private to the
+/// monitor; callers can offer Undo without retaining a second copy of the input.
+struct AppliedCorrection {
+    fileprivate let original: FieldSnapshot
+    fileprivate let correctedFullText: String
+
+    var appName: String { original.appName }
+    var frame: CGRect? { original.frame }
 }
 
 enum AccessibilityMonitorError: LocalizedError, Equatable {
@@ -318,9 +336,11 @@ final class AccessibilityMonitor {
         return snapshot
     }
 
-    func apply(_ correction: Correction, to snapshot: FieldSnapshot) throws {
+    @discardableResult
+    func apply(_ correction: Correction, to snapshot: FieldSnapshot) throws -> AppliedCorrection {
         cancelCaretRestoration()
         let acceptedAt = ProcessInfo.processInfo.systemUptime
+        CaretTrace.record("apply.begin", ["app": snapshot.bundleID, "selected": String(snapshot.selectionRange != nil), "length": String(snapshot.fullText.utf16.count)])
         guard (isEnabled || snapshot.intent == .shortcut), backend.isTrusted,
               allowedBundleIDs.contains(snapshot.bundleID) else {
             publish(nil)
@@ -371,6 +391,88 @@ final class AccessibilityMonitor {
         restoreCaret(at: caret, in: snapshot, expectedText: expected, acceptedAt: acceptedAt)
         scheduleCaretRestoration(at: caret, in: snapshot, expectedText: expected, acceptedAt: acceptedAt)
         report("Correction applied in \(snapshot.appName).")
+        return AppliedCorrection(original: snapshot, correctedFullText: expected)
+    }
+
+    /// Restore only an unchanged correction in the exact field it came from.
+    /// A selection change is harmless, but typing, switching fields, or revoking
+    /// access invalidates Undo. Never select all or fall back to simulated keys.
+    func undo(_ applied: AppliedCorrection) throws {
+        cancelCaretRestoration()
+        let acceptedAt = ProcessInfo.processInfo.systemUptime
+        let snapshot = applied.original
+        // Metadata queries can run the other app's event loop. Revalidate after
+        // checking editability and immediately before the single text write.
+        _ = try validatedUndoTarget(applied)
+        let focused = try validatedUndoTarget(applied)
+        let result = backend.write(kAXValueAttribute, value: snapshot.fullText as CFString, to: focused)
+        publish(nil)
+        guard result == .success else { throw AccessibilityMonitorError.writeFailed }
+        guard (try? validatedUndoField(for: snapshot)) != nil,
+              stillPermitted(bundleID: snapshot.bundleID, pid: snapshot.pid, intent: snapshot.intent),
+              let confirmed = attribute(kAXValueAttribute, of: focused) as? String,
+              confirmed.utf8.elementsEqual(snapshot.fullText.utf8) else {
+            throw AccessibilityMonitorError.verificationFailed
+        }
+        let caret = snapshot.selectionRange.map { $0.location + $0.length } ?? snapshot.fullText.utf16.count
+        restoreCaret(at: caret, in: snapshot, expectedText: snapshot.fullText, acceptedAt: acceptedAt)
+        scheduleCaretRestoration(at: caret, in: snapshot, expectedText: snapshot.fullText, acceptedAt: acceptedAt)
+        report("Original wording restored in \(snapshot.appName).")
+    }
+
+    /// A read-only check for a short-lived Undo offer. It does not cancel a
+    /// pending caret update, publish a capture, or expose input text to callers.
+    func canUndo(_ applied: AppliedCorrection) -> Bool {
+        (try? validatedUndoTarget(applied)) != nil
+    }
+
+    private func validatedUndoTarget(_ applied: AppliedCorrection) throws -> AXUIElement {
+        let snapshot = applied.original
+        let focused = try validatedUndoField(for: snapshot)
+        guard isSettable(kAXValueAttribute, of: focused) else {
+            throw AccessibilityMonitorError.directEditingUnsupported
+        }
+        guard stillPermitted(bundleID: snapshot.bundleID, pid: snapshot.pid, intent: snapshot.intent),
+              let latestFocus = backend.focusedElement(for: snapshot.pid),
+              CFEqual(latestFocus, snapshot.element),
+              stillPermitted(bundleID: snapshot.bundleID, pid: snapshot.pid, intent: snapshot.intent) else {
+            throw AccessibilityMonitorError.sourceChanged
+        }
+        _ = try validatedUndoField(for: snapshot)
+        // Keep the exact byte read last: a focus query can run the editor's
+        // event loop and process typing. Only local consent checks follow it.
+        guard let current = attribute(kAXValueAttribute, of: focused) as? String,
+              current.utf8.elementsEqual(applied.correctedFullText.utf8) else {
+            throw AccessibilityMonitorError.sourceChanged
+        }
+        guard stillPermitted(bundleID: snapshot.bundleID, pid: snapshot.pid, intent: snapshot.intent) else {
+            throw AccessibilityMonitorError.permissionChanged
+        }
+        return focused
+    }
+
+    private func validatedUndoField(for snapshot: FieldSnapshot) throws -> AXUIElement {
+        guard (isEnabled || snapshot.intent == .shortcut), backend.isTrusted,
+              allowedBundleIDs.contains(snapshot.bundleID) else {
+            throw AccessibilityMonitorError.permissionChanged
+        }
+        guard stillPermitted(bundleID: snapshot.bundleID, pid: snapshot.pid, intent: snapshot.intent),
+              let focused = backend.focusedElement(for: snapshot.pid),
+              CFEqual(focused, snapshot.element), backend.pid(of: focused) == snapshot.pid,
+              let role = attribute(kAXRoleAttribute, of: focused) as? String,
+              [kAXTextFieldRole, kAXTextAreaRole].contains(role) else {
+            throw AccessibilityMonitorError.sourceChanged
+        }
+        let (subroleResult, subrole) = backend.read(kAXSubroleAttribute, from: focused)
+        guard [.success, .attributeUnsupported, .noValue].contains(subroleResult),
+              (subrole as? String) != kAXSecureTextFieldSubrole,
+              (attribute(kAXEnabledAttribute, of: focused) as? Bool) == true else {
+            throw AccessibilityMonitorError.sourceChanged
+        }
+        guard stillPermitted(bundleID: snapshot.bundleID, pid: snapshot.pid, intent: snapshot.intent) else {
+            throw AccessibilityMonitorError.permissionChanged
+        }
+        return focused
     }
 
     private func cancelCaretRestoration() {
@@ -402,42 +504,65 @@ final class AccessibilityMonitor {
     @discardableResult
     private func restoreCaret(at location: Int, in snapshot: FieldSnapshot, expectedText: String,
                               acceptedAt: TimeInterval, deferred: Bool = false) -> Bool {
-        // Caret support is optional. Deferred repair may try a range write when
-        // settable metadata is inaccurate; its actual result is authoritative.
-        guard location <= expectedText.utf16.count,
-              stillPermitted(bundleID: snapshot.bundleID, pid: snapshot.pid, intent: snapshot.intent),
-              !backend.hasUserInteraction(since: acceptedAt) else { return false }
+        var details = ["app": snapshot.bundleID, "stage": deferred ? "deferred" : "immediate", "requested": String(location)]
+        func stop(_ reason: String) -> Bool {
+            details["reason"] = reason
+            CaretTrace.record("caret.stop", details)
+            return false
+        }
+        guard location <= expectedText.utf16.count else { return stop("invalid_offset") }
+        guard stillPermitted(bundleID: snapshot.bundleID, pid: snapshot.pid, intent: snapshot.intent) else { return stop("permission_or_app") }
+        guard !backend.hasUserInteraction(since: acceptedAt) else { return stop("user_activity") }
         let reportedWritable = isSettable(kAXSelectedTextRangeAttribute, of: snapshot.element)
-        guard reportedWritable || deferred,
-              stillPermitted(bundleID: snapshot.bundleID, pid: snapshot.pid, intent: snapshot.intent),
-              let focused = backend.focusedElement(for: snapshot.pid), CFEqual(focused, snapshot.element),
-              backend.pid(of: focused) == snapshot.pid,
+        details["reported_writable"] = String(reportedWritable)
+        guard reportedWritable || deferred else { return stop("unwritable_metadata") }
+        guard stillPermitted(bundleID: snapshot.bundleID, pid: snapshot.pid, intent: snapshot.intent) else { return stop("permission_after_metadata") }
+        guard let focused = backend.focusedElement(for: snapshot.pid), CFEqual(focused, snapshot.element) else { return stop("focus_identity") }
+        guard backend.pid(of: focused) == snapshot.pid,
               let role = attribute(kAXRoleAttribute, of: focused) as? String,
-              [kAXTextFieldRole, kAXTextAreaRole].contains(role) else { return false }
+              [kAXTextFieldRole, kAXTextAreaRole].contains(role) else { return stop("unsupported_role") }
+        details["role"] = role
         let (subroleResult, subrole) = backend.read(kAXSubroleAttribute, from: focused)
         guard [.success, .attributeUnsupported, .noValue].contains(subroleResult),
               (subrole as? String) != kAXSecureTextFieldSubrole,
-              (attribute(kAXEnabledAttribute, of: focused) as? Bool) == true,
-              stillPermitted(bundleID: snapshot.bundleID, pid: snapshot.pid, intent: snapshot.intent),
-              let current = attribute(kAXValueAttribute, of: focused) as? String,
-              current.utf8.elementsEqual(expectedText.utf8) else { return false }
+              (attribute(kAXEnabledAttribute, of: focused) as? Bool) == true else { return stop("protected_or_disabled") }
+        guard stillPermitted(bundleID: snapshot.bundleID, pid: snapshot.pid, intent: snapshot.intent) else { return stop("permission_before_value") }
+        guard let current = attribute(kAXValueAttribute, of: focused) as? String,
+              current.utf8.elementsEqual(expectedText.utf8) else { return stop("changed_value") }
         if deferred {
             let (result, value) = backend.read(kAXSelectedTextRangeAttribute, from: focused)
-            guard result == .success, let value, CFGetTypeID(value) == AXValueGetTypeID() else { return false }
+            details["range_read_error"] = String(result.rawValue)
+            guard result == .success, let value, CFGetTypeID(value) == AXValueGetTypeID() else { return stop("range_unavailable") }
             var selection = CFRange()
-            guard AXValueGetValue(value as! AXValue, .cfRange, &selection) else { return false }
-            if selection.location == location && selection.length == 0 { return true }
-            // Only repair the reported reset-to-start. Other positions and
-            // selections belong to the user, even if the text is unchanged.
-            guard selection.location == 0 && selection.length == 0 else { return false }
+            guard AXValueGetValue(value as! AXValue, .cfRange, &selection) else { return stop("range_invalid_type") }
+            details["actual_location"] = String(selection.location)
+            details["actual_length"] = String(selection.length)
+            if selection.location == location && selection.length == 0 {
+                CaretTrace.record("caret.confirmed", details)
+                return true
+            }
+            guard selection.location == 0 && selection.length == 0 else { return stop("user_selection") }
         }
         guard stillPermitted(bundleID: snapshot.bundleID, pid: snapshot.pid, intent: snapshot.intent),
               let latestFocus = backend.focusedElement(for: snapshot.pid), CFEqual(latestFocus, snapshot.element),
-              stillPermitted(bundleID: snapshot.bundleID, pid: snapshot.pid, intent: snapshot.intent),
-              !backend.hasUserInteraction(since: acceptedAt) else { return false }
+              stillPermitted(bundleID: snapshot.bundleID, pid: snapshot.pid, intent: snapshot.intent) else { return stop("changed_before_write") }
+        guard !backend.hasUserInteraction(since: acceptedAt) else { return stop("user_activity_before_write") }
         var range = CFRange(location: location, length: 0)
-        guard let value = AXValueCreate(.cfRange, &range) else { return false }
+        guard let value = AXValueCreate(.cfRange, &range) else { return stop("range_creation") }
         let result = backend.write(kAXSelectedTextRangeAttribute, value: value, to: snapshot.element)
+        details["write_error"] = String(result.rawValue)
+        if CaretTrace.enabled {
+            let (readResult, readValue) = backend.read(kAXSelectedTextRangeAttribute, from: snapshot.element)
+            details["readback_error"] = String(readResult.rawValue)
+            if readResult == .success, let readValue, CFGetTypeID(readValue) == AXValueGetTypeID() {
+                var confirmed = CFRange()
+                if AXValueGetValue(readValue as! AXValue, .cfRange, &confirmed) {
+                    details["readback_location"] = String(confirmed.location)
+                    details["readback_length"] = String(confirmed.length)
+                }
+            }
+            CaretTrace.record("caret.write", details)
+        }
         return result == .success || result == .cannotComplete
     }
 
