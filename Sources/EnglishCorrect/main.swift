@@ -115,6 +115,25 @@ if CommandLine.arguments.contains("--test-builtin-ai") {
                 }
                 guard revisions.count >= 2 else { throw LocalAIError.invalidResponse }
                 print("PASS: all three writing styles returned readable corrections with visible tone differences")
+                var slangConfig = config
+                slangConfig.style = .slang
+                let slangClient = LocalAIClient(configuration: slangConfig)
+                for sample in ["Let me think.", "I need to think about this proposal before I decide.", "I am very busy today.", "I put the noodles in the soup."] {
+                    let result = try await slangClient.correct(sample)
+                    print("SLANG INPUT: \(sample)\nSLANG OUTPUT: \(result.corrected)")
+                    let revised = result.corrected.lowercased()
+                    switch sample {
+                    case "Let me think.":
+                        guard revised.contains("noodle on") else { throw LocalAIError.invalidResponse }
+                    case "I need to think about this proposal before I decide.":
+                        guard revised.contains("proposal"), revised.contains("decide") else { throw LocalAIError.invalidResponse }
+                    case "I am very busy today.":
+                        guard revised.contains("today"), !revised.contains("noodle") else { throw LocalAIError.invalidResponse }
+                    default:
+                        guard revised.contains("noodles"), revised.contains("soup"), !revised.contains("noodle on") else { throw LocalAIError.invalidResponse }
+                    }
+                }
+                print("PASS: slang uses the requested thinking idiom without copying it into unrelated text")
             }
             BuiltInModelRuntime.shared.shutdown()
             print("PASS: built-in download, verification, engine startup, and 3 corrections; no external AI app used")

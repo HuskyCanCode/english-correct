@@ -21,7 +21,23 @@ public enum WritingStyle: String, CaseIterable, Codable, Identifiable, Sendable 
         case .casual:
             return "Writing style: Casual. Correct the supplied text in natural everyday English with a friendly, conversational tone. Contractions are welcome; do not add slang."
         case .slang:
-            return "Writing style: Slang. Rewrite the supplied text in relaxed conversational English with light, common slang where it fits. Do not add profanity or stereotypes."
+            return "Writing style: Slang. Rewrite with natural, playful idioms where they fit. Use full words, not texting abbreviations. Preserve all details. If no idiom fits, leave the text alone. Do not add profanity or stereotypes."
         }
     }
+
+    var examples: [WritingStyleExample] {
+        guard self == .slang else { return [] }
+        return [
+            WritingStyleExample(original: "Let me think.", corrected: "Let me noodle on it.", explanation: "Used a playful idiom for thinking."),
+            WritingStyleExample(original: "I am very busy today.", corrected: "I'm swamped today.", explanation: "Used a colloquial idiom for being busy."),
+            WritingStyleExample(original: "The noodles are in the soup.", corrected: "The noodles are in the soup.", explanation: "No fitting idiom; preserved literal details.")
+        ]
+    }
+
+}
+
+struct WritingStyleExample: Sendable {
+    let original: String
+    let corrected: String
+    let explanation: String
 }

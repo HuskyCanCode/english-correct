@@ -1,3 +1,11 @@
+# Version 1.7.5 expressive Slang validation
+
+- Full suite: 331 tests, 329 passed, two optional legacy live tests skipped, zero failures.
+- Slang now uses fixed examples of playful idioms and a literal sentence that should stay unchanged. The original user text remains its own JSON payload. Formal and Casual instructions are unchanged, and Casual remains the default.
+- The built-in Fast model returned “Let me noodle on it” for “Let me think,” “I need to noodle on this proposal before I decide” for the longer thinking example, and “I'm swamped today” for the busy-day example. It preserved “I put the noodles in the soup” without adding an unrelated idiom.
+- The app's live smoke command passed those four Slang cases, the three style cases, and three grammar/preservation cases. This is a small synthetic quality sample; wording can vary. Pro and live Ollama inference remain unverified.
+- The 1.7.5/build 23 DMG passed integrity, mounted-app, and strict signature checks. It remains Apple Development-signed and is not Apple-notarized.
+
 # Version 1.7.4 writing-style and model-label validation
 
 - Full suite: 331 tests, 329 passed, two optional legacy live tests skipped, zero failures.

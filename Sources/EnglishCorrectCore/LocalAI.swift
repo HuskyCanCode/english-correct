@@ -187,6 +187,18 @@ public struct LocalAIClient: Sendable {
             "required": ["corrected", "explanation"],
             "additionalProperties": false
         ]
+        // Fixed examples teach small models idiomatic tone without treating
+        // user content as instructions or prescribing idioms for unrelated text.
+        let examples = try configuration.style.examples.map { example in
+            let input = try JSONSerialization.data(withJSONObject: ["text": example.original], options: [.sortedKeys])
+            let output = try JSONSerialization.data(withJSONObject: ["corrected": example.corrected, "explanation": example.explanation], options: [.sortedKeys])
+            return (input: String(decoding: input, as: UTF8.self), output: String(decoding: output, as: UTF8.self))
+        }
+        let messages = [["role": "system", "content": system]] + examples.flatMap {
+            [["role": "user", "content": $0.input], ["role": "assistant", "content": $0.output]]
+        } + [["role": "user", "content": prose]]
+        let exampleContext = examples.map { "Input: \($0.input)\nOutput: \($0.output)" }.joined(separator: "\n")
+        let ollamaSystem = examples.isEmpty ? system : system + "\nStyle examples (not the text to correct):\n" + exampleContext
         let body: [String: Any]
         let path: String
         switch configuration.provider {
@@ -194,14 +206,14 @@ public struct LocalAIClient: Sendable {
             path = "/v1/chat/completions"
             body = [
                 "model": configuration.model,
-                "messages": [["role": "system", "content": system], ["role": "user", "content": prose]],
+                "messages": messages,
                 "temperature": 0.1, "max_tokens": 4_096, "stream": false,
                 "response_format": ["type": "json_schema", "json_schema": ["name": "english_correction", "strict": true, "schema": schema]]
             ]
         case .ollama:
             path = "/api/generate"
             body = [
-                "model": configuration.model, "system": system, "prompt": prose,
+                "model": configuration.model, "system": ollamaSystem, "prompt": prose,
                 "stream": false, "format": schema,
                 "options": ["temperature": 0.1, "num_predict": 4_096]
             ]
