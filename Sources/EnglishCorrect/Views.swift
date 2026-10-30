@@ -140,7 +140,7 @@ struct MainView: View {
                     ForEach(CorrectionShortcut.allCases) { choice in Text(choice.label).tag(choice) }
                 }.labelsHidden().frame(width: 150).accessibilityLabel("Correction shortcut")
             }
-            Text("In an allowed app, select a sentence to check just that text. With nothing selected, the shortcut checks the whole input. Use Check writing for the draft here.")
+            Text("In an allowed app, select a sentence to check just that text. With nothing selected, the shortcut checks the whole input. When an editable suggestion appears, press Return to apply it. Use Check writing for the draft here.")
                 .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Text(model.shortcutRegistered && !model.readyInOtherApps ? "Shortcut registered. Complete setup to check writing in other apps." : model.shortcutStatus).font(.system(size: 11)).foregroundStyle(teal).fixedSize(horizontal: false, vertical: true)
             if !model.trusted {
@@ -246,6 +246,7 @@ enum SuggestionMetrics {
 struct SuggestionView: View {
     let presentation: SuggestionPresentation
     let width: CGFloat
+    var acceptanceHint: String? = nil
     let dismiss: () -> Void
     let copy: () -> Void
     let apply: () -> Void
@@ -283,6 +284,11 @@ struct SuggestionView: View {
                 .accessibilityIdentifier("suggestion-text-scroll")
                 Text(suggestion.editSummary).font(.system(size: 11)).foregroundStyle(.secondary)
                     .lineLimit(3).fixedSize(horizontal: false, vertical: true)
+                if let acceptanceHint {
+                    Text(acceptanceHint).font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(teal).fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("suggestion-accept-key-hint")
+                }
                 HStack {
                     Text(SuggestionMetrics.textHeight(suggestion.corrected, width: textWidth, fontSize: 15, lineSpacing: 4) >= SuggestionMetrics.maximumTextHeight
                          ? "Scroll for the full suggestion." : "Review before applying.")
@@ -298,7 +304,7 @@ struct SuggestionView: View {
                         .disabled(!presentation.canApply)
                         .accessibilityIdentifier("suggestion-apply")
                         .accessibilityHint(presentation.canApply
-                            ? "Replaces the reviewed text in your writing app."
+                            ? "Replaces the reviewed text in your writing app. " + (acceptanceHint ?? "")
                             : "Direct replacement is unavailable in this field. Use Copy instead.")
                         .help(presentation.canApply ? "Apply the correction" : "This field doesn't support replacement. Use Copy instead.")
                 }

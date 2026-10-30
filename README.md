@@ -2,7 +2,7 @@
 
 A native macOS writing assistant that checks English with a local AI model. Check a draft inside the app, or request a suggestion in another app you explicitly allow. You review every change before applying it.
 
-**[Download English Correct 1.7.2 for Mac](https://github.com/HuskyCanCode/english-correct/releases/download/v1.7.2/English-Correct-1.7.2-arm64.dmg)** · [Release notes and checksums](https://github.com/HuskyCanCode/english-correct/releases/tag/v1.7.2)
+**[Download English Correct 1.7.3 for Mac](https://github.com/HuskyCanCode/english-correct/releases/download/v1.7.3/English-Correct-1.7.3-arm64.dmg)** · [Release notes and checksums](https://github.com/HuskyCanCode/english-correct/releases/tag/v1.7.3)
 
 Apple Silicon (M-series) · macOS 14+ · No Xcode needed to install. The installer is about **13 MB**, including the local AI engine. Fast and Pro model files download separately inside the app.
 
@@ -24,7 +24,7 @@ Models are downloaded from the official Qwen repositories and verified against p
 
 ### 1. Download, install, and open
 
-1. [Download the 1.7.2 disk image](https://github.com/HuskyCanCode/english-correct/releases/download/v1.7.2/English-Correct-1.7.2-arm64.dmg). On the release page, choose **English-Correct-1.7.2-arm64.dmg** under Assets; the source-code archives are for developers.
+1. [Download the 1.7.3 disk image](https://github.com/HuskyCanCode/english-correct/releases/download/v1.7.3/English-Correct-1.7.3-arm64.dmg). On the release page, choose **English-Correct-1.7.3-arm64.dmg** under Assets; the source-code archives are for developers.
 2. Open the downloaded `.dmg` and drag **English Correct.app** onto the **Applications** folder shortcut. If updating, quit the old app first and replace the installed copy.
 3. Eject the disk image, then open **English Correct** from Applications. Keep it in that location before granting Accessibility access.
 4. In Setup, open Models to download Fast or Pro. The engine is included; model files are downloaded separately.
@@ -104,7 +104,9 @@ Opening at login does not grant app access or enable automatic suggestions. The 
 2. Click an editable input in an app you have allowed.
 3. **Select a sentence or passage** to check only that text. With nothing selected, the whole input is checked.
 4. Press **⌥⌘E (Option–Command–E)**.
-5. Review the floating suggestion. Choose **Apply** to replace the checked text, **Copy** to put the correction on the clipboard, or close the suggestion to leave your writing unchanged.
+5. Review the floating suggestion. Press **Return** or choose **Apply** to replace the checked text, **Copy** to put the correction on the clipboard, or close the suggestion to leave your writing unchanged.
+
+Return accepts only an editable suggestion while its popup is visible. It is released when the popup closes, and is not reserved for loading, error, or copy-only popups. If Return is already reserved, the popup tells you to use Apply.
 
 Apply is unavailable when the field cannot safely accept a replacement; use Copy and paste it yourself. Long suggestions scroll. Copy and Apply use plain corrected text without the visual highlighting. If the shortcut conflicts with another app, choose **⌃⌥⌘E (Control–Option–Command–E)** in Write, App access, or Setup.
 
@@ -118,7 +120,7 @@ With automatic suggestions enabled, adjust **Wait after typing** in Write or Set
 | --- | --- |
 | Download link shows 404 | Open the Releases page and choose the latest DMG asset. |
 | macOS blocks the first launch | This development build is not notarized. Read the first-launch notice above and Apple's linked guidance. |
-| Download is stuck on an older release asking for LM Studio | Install version 1.7.2, then choose **Use built-in AI instead** if shown. No separate AI app is needed. |
+| Download is stuck on an older release asking for LM Studio | Install version 1.7.3, then choose **Use built-in AI instead** if shown. No separate AI app is needed. |
 | Built-in engine is missing | Install the complete app from the DMG; a bare source/debug executable does not include the engine. |
 | A model cannot start | Close memory-heavy apps and try Fast. Download/select a model, then use Setup → Check setup. |
 | Download failed or was stopped | Check internet and free space, then choose Download again. Completed verified model files are reused; an interrupted file downloads again. |

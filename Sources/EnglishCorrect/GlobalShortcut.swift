@@ -116,10 +116,23 @@ private final class ShortcutCallbackContext {
 }
 
 @MainActor
-final class CarbonShortcutBackend: ShortcutRegistrationBackend {
+final class CarbonShortcutBackend: ShortcutRegistrationBackend, SuggestionAcceptanceBackend {
     private static var nextID: UInt32 = 0
 
     func register(_ shortcut: CorrectionShortcut, action: @escaping @MainActor () -> Void) throws -> ShortcutRegistrationToken {
+        do { return try registerKey(UInt32(kVK_ANSI_E), modifiers: shortcut.modifiers, action: action) }
+        catch let error as CarbonHotKeyRegistrationError {
+            if error.status == eventHotKeyExistsErr { throw GlobalShortcutError.alreadyInUse(shortcut) }
+            throw GlobalShortcutError.registrationFailed(shortcut, error.status)
+        }
+    }
+
+    func registerAcceptance(action: @escaping @MainActor () -> Void) throws -> ShortcutRegistrationToken {
+        try registerKey(UInt32(kVK_Return), modifiers: 0, action: action)
+    }
+
+    private func registerKey(_ keyCode: UInt32, modifiers: UInt32,
+                             action: @escaping @MainActor () -> Void) throws -> ShortcutRegistrationToken {
         Self.nextID &+= 1
         let identifier = EventHotKeyID(signature: 0x456E4372, id: Self.nextID) // EnCr
         let context = ShortcutCallbackContext(identifier: identifier, action: action)
@@ -142,17 +155,50 @@ final class CarbonShortcutBackend: ShortcutRegistrationBackend {
         }
 
         var hotKey: EventHotKeyRef?
-        let status = RegisterEventHotKey(UInt32(kVK_ANSI_E), shortcut.modifiers, identifier,
+        let status = RegisterEventHotKey(keyCode, modifiers, identifier,
                                          GetApplicationEventTarget(), OptionBits(kEventHotKeyExclusive), &hotKey)
         guard status == noErr, let hotKey else {
             RemoveEventHandler(handler)
-            if status == eventHotKeyExistsErr { throw GlobalShortcutError.alreadyInUse(shortcut) }
-            throw GlobalShortcutError.registrationFailed(shortcut, status)
+            throw CarbonHotKeyRegistrationError(status: status)
         }
         return ShortcutRegistrationToken {
             context.action = nil
             UnregisterEventHotKey(hotKey)
             RemoveEventHandler(handler)
         }
+    }
+}
+
+private struct CarbonHotKeyRegistrationError: Error {
+    let status: OSStatus
+}
+
+@MainActor
+protocol SuggestionAcceptanceBackend {
+    func registerAcceptance(action: @escaping @MainActor () -> Void) throws -> ShortcutRegistrationToken
+}
+
+/// Return belongs to the typing app whenever there is no actionable popup.
+@MainActor
+final class SuggestionAcceptanceShortcut {
+    private let backend: SuggestionAcceptanceBackend
+    private var registration: ShortcutRegistrationToken?
+    private(set) var errorMessage: String?
+    var isRegistered: Bool { registration != nil }
+
+    init(backend: SuggestionAcceptanceBackend? = nil) {
+        self.backend = backend ?? CarbonShortcutBackend()
+    }
+
+    func activate(action: @escaping @MainActor () -> Void) {
+        deactivate()
+        do { registration = try backend.registerAcceptance(action: action) }
+        catch { errorMessage = "Return is unavailable. Use Apply to accept this suggestion." }
+    }
+
+    func deactivate() {
+        registration?.cancel()
+        registration = nil
+        errorMessage = nil
     }
 }

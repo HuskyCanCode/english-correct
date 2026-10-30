@@ -6,10 +6,15 @@ final class SuggestionPanel {
     let panel: NSPanel
     private weak var model: AppModel?
     private let presentsWindows: Bool
+    private let acceptance: SuggestionAcceptanceShortcut
+    private let allowsShortcutRegistration: Bool
+    private(set) var isShown = false
 
-    init(model: AppModel, presentsWindows: Bool = true) {
+    init(model: AppModel, presentsWindows: Bool = true, acceptanceBackend: SuggestionAcceptanceBackend? = nil) {
         self.model = model
         self.presentsWindows = presentsWindows
+        self.acceptance = SuggestionAcceptanceShortcut(backend: acceptanceBackend)
+        self.allowsShortcutRegistration = presentsWindows || acceptanceBackend != nil
         panel = NonactivatingPanel(contentRect: NSRect(x: 0, y: 0, width: SuggestionMetrics.width, height: 280), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.title = "English Correct suggestion"
         panel.setAccessibilityIdentifier("english-correct-suggestion-panel")
@@ -24,7 +29,11 @@ final class SuggestionPanel {
     }
 
     func show(near frame: CGRect?) {
+        acceptance.deactivate()
+        isShown = false
         guard let model, let primaryScreen = NSScreen.screens.first else { return }
+        let canAccept = allowsShortcutRegistration && model.externalCorrection?.hasChanges == true
+            && model.externalCanApply && !model.externalBusy && !model.externalNeedsSetup
         // AX uses a top-left origin based on the primary display; AppKit uses bottom-left.
         let converted = frame.map { NSRect(x: $0.minX, y: primaryScreen.frame.height - $0.maxY, width: $0.width, height: $0.height) }
         let screen = NSScreen.screens.first { screen in converted.map { screen.frame.intersects($0) } ?? false } ?? NSScreen.main ?? primaryScreen
@@ -32,31 +41,50 @@ final class SuggestionPanel {
         let width = min(SuggestionMetrics.width, visible.width)
         let view = SuggestionView(
             presentation: SuggestionPresentation(model: model), width: width,
+            acceptanceHint: canAccept ? "Press Return to apply." : nil,
             dismiss: { [weak model] in model?.dismissExternal() },
             copy: { [weak model] in model?.copyExternal() },
             apply: { [weak model] in model?.applyExternal() },
             openSettings: { [weak model] in model?.openExternalSettings() }
         )
-        // Measure a fresh, immutable presentation. Measuring the old observed
-        // hosting view here could still return the preceding loading layout.
-        let hosting = NSHostingView(rootView: AnyView(view))
-        hosting.sizingOptions = [.intrinsicContentSize]
-        hosting.layoutSubtreeIfNeeded()
-        let preferredHeight = max(160, ceil(hosting.fittingSize.height))
-        let height = min(preferredHeight, visible.height)
-        if preferredHeight > visible.height {
-            // On a very short display the entire card can scroll, keeping every
-            // line and action reachable instead of clipping the window's bottom.
-            hosting.rootView = AnyView(ScrollView(.vertical) { view }.frame(width: width, height: height))
+        func render(_ view: SuggestionView) {
+            // Measure a fresh, immutable presentation. Measuring the old observed
+            // hosting view here could still return the preceding loading layout.
+            let hosting = NSHostingView(rootView: AnyView(view))
+            hosting.sizingOptions = [.intrinsicContentSize]
+            hosting.layoutSubtreeIfNeeded()
+            let preferredHeight = max(160, ceil(hosting.fittingSize.height))
+            let height = min(preferredHeight, visible.height)
+            if preferredHeight > visible.height {
+                // On a very short display the entire card can scroll, keeping every
+                // line and action reachable instead of clipping the window's bottom.
+                hosting.rootView = AnyView(ScrollView(.vertical) { view }.frame(width: width, height: height))
+            }
+            hosting.wantsLayer = true
+            // Let the native glass draw its rim; clipping the hosting layer would
+            // cut off the optical edge. The surface owns its rounded shape.
+            hosting.layer?.masksToBounds = false
+            panel.contentView = hosting
+            panel.setFrame(Self.placement(near: converted, in: visible, size: NSSize(width: width, height: height)), display: true)
+            hosting.layoutSubtreeIfNeeded()
+            if presentsWindows { panel.orderFrontRegardless() }
         }
-        hosting.wantsLayer = true
-        // Let the native glass draw its rim; clipping the hosting layer would
-        // cut off the optical edge. The surface owns its rounded shape.
-        hosting.layer?.masksToBounds = false
-        panel.contentView = hosting
-        panel.setFrame(Self.placement(near: converted, in: visible, size: NSSize(width: width, height: height)), display: true)
-        hosting.layoutSubtreeIfNeeded()
-        if presentsWindows { panel.orderFrontRegardless() }
+        render(view)
+        isShown = true
+        // Reserve Return only after the actionable popup has been presented.
+        if canAccept {
+            acceptance.activate { [weak self, weak model] in
+                guard let self, self.isShown, !self.presentsWindows || self.panel.isVisible,
+                      let model, model.externalCorrection?.hasChanges == true,
+                      model.externalCanApply, !model.externalBusy, !model.externalNeedsSetup else { return }
+                model.applyExternal()
+            }
+            if let error = acceptance.errorMessage {
+                var fallback = view
+                fallback.acceptanceHint = error
+                render(fallback)
+            }
+        }
     }
 
     static func placement(near frame: CGRect?, in visible: CGRect, size: CGSize) -> CGRect {
@@ -70,7 +98,11 @@ final class SuggestionPanel {
         return CGRect(x: x, y: y, width: width, height: height)
     }
 
-    func hide() { panel.orderOut(nil) }
+    func hide() {
+        isShown = false
+        acceptance.deactivate()
+        panel.orderOut(nil)
+    }
 }
 
 private class NonactivatingPanel: NSPanel {

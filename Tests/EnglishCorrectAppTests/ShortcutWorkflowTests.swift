@@ -104,6 +104,50 @@ final class ShortcutWorkflowTests: XCTestCase {
         XCTAssertEqual(fixture.client.requests.count, 1)
     }
 
+    func testReturnAcceptsVisibleSuggestionAndReleasesKeyAfterApply() async throws {
+        let fixture = try await ShortcutFixture()
+        defer { fixture.close() }
+        let keyboard = AcceptanceBackendStub()
+        let panel = SuggestionPanel(model: fixture.app, presentsWindows: false, acceptanceBackend: keyboard)
+        fixture.app.panel = panel
+        fixture.client.holdResponses = true
+        fixture.app.triggerShortcut()
+        await waitUntil { fixture.client.pendingCount == 1 }
+        XCTAssertEqual(keyboard.registrations, 0, "Return stays available while loading")
+        fixture.client.finish()
+        await waitUntil { fixture.app.externalCorrection != nil }
+        XCTAssertNotNil(keyboard.action)
+        keyboard.pressReturn()
+        XCTAssertEqual(fixture.backend.text, "She went yesterday.")
+        XCTAssertEqual(fixture.backend.writes, [kAXValueAttribute])
+        XCTAssertNil(fixture.app.externalCorrection)
+        XCTAssertFalse(panel.isShown)
+        XCTAssertNil(keyboard.action)
+        keyboard.pressReturn()
+        XCTAssertEqual(fixture.backend.writes.count, 1)
+    }
+
+    func testReturnNeverAcceptsDismissedCopyOnlyChangedOrRevokedSuggestion() async throws {
+        for invalidation in ["dismissed", "copy-only", "changed", "revoked"] {
+            let fixture = try await ShortcutFixture()
+            defer { fixture.close() }
+            let keyboard = AcceptanceBackendStub()
+            fixture.app.panel = SuggestionPanel(model: fixture.app, presentsWindows: false, acceptanceBackend: keyboard)
+            if invalidation == "copy-only" { fixture.backend.valueSettable = false }
+            fixture.app.triggerShortcut()
+            await waitUntil { fixture.app.externalCorrection != nil }
+            switch invalidation {
+            case "dismissed": fixture.app.dismissExternal()
+            case "changed": fixture.backend.text = "A newer sentence."
+            case "revoked": fixture.backend.isTrusted = false
+            default: XCTAssertNil(keyboard.action)
+            }
+            keyboard.pressReturn()
+            XCTAssertTrue(fixture.backend.writes.isEmpty, invalidation)
+            XCTAssertNil(keyboard.action, "Return must be released after an invalid review")
+        }
+    }
+
     func testShortcutChecksWholeInputAndAppliesOnlyAfterUserActionWhilePaused() async throws {
         let fixture = try await ShortcutFixture()
         defer { fixture.close() }

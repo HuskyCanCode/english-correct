@@ -1,3 +1,10 @@
+# Version 1.7.3 Return-to-accept validation
+
+- Full suite: 324 tests, 322 passed, two optional legacy live tests skipped, zero failures.
+- A real Return key press in a disposable native text window accepted a visible suggestion through the production Carbon shortcut and Apply path. The popup closed; the next Return inserted a normal newline. This used synthetic text and an injected Accessibility backend, without reading or editing personal app content.
+- Tests cover registration cleanup, conflicts/fallback, loading/copy-only/dismissed popups, changed source text, and revoked permission. Return never wrote text for an invalid review.
+- Hidden popup layout tests do not reserve Return. Direct editing in arbitrary third-party fields still depends on their Accessibility support.
+
 # Version 1.7.2 automatic-suggestion timing validation
 
 - Full suite: 320 tests, 318 passed, two optional legacy live tests skipped, zero failures.
