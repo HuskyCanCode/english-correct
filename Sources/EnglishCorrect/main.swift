@@ -101,6 +101,21 @@ if CommandLine.arguments.contains("--test-builtin-ai") {
                 if sample == samples[1] { guard result.corrected.contains("have") && result.corrected.contains("books") else { throw LocalAIError.invalidResponse } }
                 if sample == samples[2] { guard result.corrected == sample else { throw LocalAIError.invalidResponse } }
             }
+            if CommandLine.arguments.contains("--test-writing-styles") {
+                let text = "hey, can u send me the report when you get a chance?"
+                var revisions = Set<String>()
+                for style in WritingStyle.allCases {
+                    var styledConfig = config
+                    styledConfig.style = style
+                    let result = try await LocalAIClient(configuration: styledConfig).correct(text)
+                    guard !result.corrected.isEmpty, result.corrected.lowercased().contains("report") else { throw LocalAIError.invalidResponse }
+                    print("STYLE \(style.label): \(result.corrected)")
+                    if style == .formal, result.corrected.lowercased().hasPrefix("hey") { throw LocalAIError.invalidResponse }
+                    revisions.insert(result.corrected)
+                }
+                guard revisions.count >= 2 else { throw LocalAIError.invalidResponse }
+                print("PASS: all three writing styles returned readable corrections with visible tone differences")
+            }
             BuiltInModelRuntime.shared.shutdown()
             print("PASS: built-in download, verification, engine startup, and 3 corrections; no external AI app used")
             exit(0)

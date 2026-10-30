@@ -42,6 +42,7 @@ final class SuggestionPanel {
         let view = SuggestionView(
             presentation: SuggestionPresentation(model: model), width: width,
             acceptanceHint: canAccept ? "Press Return to apply." : nil,
+            styleChanged: { [weak model] in model?.writingStyle = $0 },
             dismiss: { [weak model] in model?.dismissExternal() },
             copy: { [weak model] in model?.copyExternal() },
             apply: { [weak model] in model?.applyExternal() },

@@ -97,6 +97,9 @@ struct MainView: View {
             }.padding(18).contentSurface(cornerRadius: 18, tinted: true)
             shortcutCard
             VStack(alignment: .leading, spacing: 13) {
+                Picker("Writing style", selection: $model.writingStyle) {
+                    ForEach(WritingStyle.allCases) { style in Text(style.label).tag(style) }
+                }.pickerStyle(.segmented).accessibilityLabel("Draft writing style")
                 HStack { Text("YOUR DRAFT").font(.system(size: 11, weight: .semibold)).tracking(1.3); Spacer(); Text("\(model.draft.count) / 4,000").font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary) }
                 TextEditor(text: $model.draft).font(.system(size: 17)).lineSpacing(6).scrollContentBackground(.hidden)
                     .frame(minHeight: 145).accessibilityLabel("Writing draft")
@@ -211,6 +214,8 @@ struct SuggestionPresentation {
     let canApply: Bool
     let status: String
     let needsSetup: Bool
+    let modelLabel: String
+    let writingStyle: WritingStyle
 
     @MainActor init(model: AppModel) {
         app = model.externalApp
@@ -220,6 +225,8 @@ struct SuggestionPresentation {
         canApply = model.externalCanApply
         status = model.externalStatus
         needsSetup = model.externalNeedsSetup
+        modelLabel = model.activeModelLabel
+        writingStyle = model.writingStyle
     }
 }
 
@@ -247,6 +254,7 @@ struct SuggestionView: View {
     let presentation: SuggestionPresentation
     let width: CGFloat
     var acceptanceHint: String? = nil
+    var styleChanged: (WritingStyle) -> Void = { _ in }
     let dismiss: () -> Void
     let copy: () -> Void
     let apply: () -> Void
@@ -270,6 +278,14 @@ struct SuggestionView: View {
             }
             Text([presentation.app, presentation.scope, "Local AI"].filter { !$0.isEmpty }.joined(separator: " · "))
                 .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text("Model: \(presentation.modelLabel)")
+                .font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("suggestion-model-name")
+            Picker("Writing style", selection: Binding(get: { presentation.writingStyle }, set: styleChanged)) {
+                ForEach(WritingStyle.allCases) { style in Text(style.label).tag(style) }
+            }.pickerStyle(.segmented).focusable(false)
+                .accessibilityIdentifier("suggestion-writing-style")
             if presentation.busy { ProgressView().controlSize(.small) }
             if let suggestion = presentation.correction {
                 ScrollView(.vertical) {

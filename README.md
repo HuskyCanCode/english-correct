@@ -2,7 +2,7 @@
 
 A native macOS writing assistant that checks English with a local AI model. Check a draft inside the app, or request a suggestion in another app you explicitly allow. You review every change before applying it.
 
-**[Download English Correct 1.7.3 for Mac](https://github.com/HuskyCanCode/english-correct/releases/download/v1.7.3/English-Correct-1.7.3-arm64.dmg)** · [Release notes and checksums](https://github.com/HuskyCanCode/english-correct/releases/tag/v1.7.3)
+**[Download English Correct 1.7.4 for Mac](https://github.com/HuskyCanCode/english-correct/releases/download/v1.7.4/English-Correct-1.7.4-arm64.dmg)** · [Release notes and checksums](https://github.com/HuskyCanCode/english-correct/releases/tag/v1.7.4)
 
 Apple Silicon (M-series) · macOS 14+ · No Xcode needed to install. The installer is about **13 MB**, including the local AI engine. Fast and Pro model files download separately inside the app.
 
@@ -24,7 +24,7 @@ Models are downloaded from the official Qwen repositories and verified against p
 
 ### 1. Download, install, and open
 
-1. [Download the 1.7.3 disk image](https://github.com/HuskyCanCode/english-correct/releases/download/v1.7.3/English-Correct-1.7.3-arm64.dmg). On the release page, choose **English-Correct-1.7.3-arm64.dmg** under Assets; the source-code archives are for developers.
+1. [Download the 1.7.4 disk image](https://github.com/HuskyCanCode/english-correct/releases/download/v1.7.4/English-Correct-1.7.4-arm64.dmg). On the release page, choose **English-Correct-1.7.4-arm64.dmg** under Assets; the source-code archives are for developers.
 2. Open the downloaded `.dmg` and drag **English Correct.app** onto the **Applications** folder shortcut. If updating, quit the old app first and replace the installed copy.
 3. Eject the disk image, then open **English Correct** from Applications. Keep it in that location before granting Accessibility access.
 4. In Setup, open Models to download Fast or Pro. The engine is included; model files are downloaded separately.
@@ -94,7 +94,7 @@ Opening at login does not grant app access or enable automatic suggestions. The 
 ### Check a draft inside English Correct
 
 1. Open **Write** and enter or paste text in **Your draft**.
-2. Choose **Check writing**.
+2. Choose **Formal**, **Casual**, or **Slang**, then choose **Check writing**. Casual is the default; the app remembers your choice.
 3. Review **Suggested revision**. Added and changed words are highlighted in green and underlined; the edit summary also identifies removed wording.
 4. Choose **Use suggestion** to update the draft, or **Dismiss** to leave it unchanged. Copy text from the writing area when finished.
 
@@ -104,7 +104,7 @@ Opening at login does not grant app access or enable automatic suggestions. The 
 2. Click an editable input in an app you have allowed.
 3. **Select a sentence or passage** to check only that text. With nothing selected, the whole input is checked.
 4. Press **⌥⌘E (Option–Command–E)**.
-5. Review the floating suggestion. Press **Return** or choose **Apply** to replace the checked text, **Copy** to put the correction on the clipboard, or close the suggestion to leave your writing unchanged.
+5. Review the floating suggestion. It shows the current model name. Choose **Formal**, **Casual**, or **Slang** to regenerate the suggestion from the same original text; Casual is the default, and your choice is remembered. Press **Return** or choose **Apply** to replace the checked text, **Copy** to put the correction on the clipboard, or close the suggestion to leave your writing unchanged.
 
 Return accepts only an editable suggestion while its popup is visible. It is released when the popup closes, and is not reserved for loading, error, or copy-only popups. If Return is already reserved, the popup tells you to use Apply.
 
@@ -120,7 +120,7 @@ With automatic suggestions enabled, adjust **Wait after typing** in Write or Set
 | --- | --- |
 | Download link shows 404 | Open the Releases page and choose the latest DMG asset. |
 | macOS blocks the first launch | This development build is not notarized. Read the first-launch notice above and Apple's linked guidance. |
-| Download is stuck on an older release asking for LM Studio | Install version 1.7.3, then choose **Use built-in AI instead** if shown. No separate AI app is needed. |
+| Download is stuck on an older release asking for LM Studio | Install version 1.7.4, then choose **Use built-in AI instead** if shown. No separate AI app is needed. |
 | Built-in engine is missing | Install the complete app from the DMG; a bare source/debug executable does not include the engine. |
 | A model cannot start | Close memory-heavy apps and try Fast. Download/select a model, then use Setup → Check setup. |
 | Download failed or was stopped | Check internet and free space, then choose Download again. Completed verified model files are reused; an interrupted file downloads again. |
@@ -142,7 +142,7 @@ With automatic suggestions enabled, adjust **Wait after typing** in Write or Set
 - With a selection, only the selected text is sent to the local model. Otherwise the whole input is sent. Fields that cannot reliably report their selection are skipped.
 - The bundled engine listens only on loopback with a fresh authentication key for each launch; its web interface and prompt logs are disabled. Correction requests use a loopback-only local connection. There is no cloud fallback, telemetry, keystroke recording, clipboard polling, or saved draft history. Copy writes to the clipboard only when clicked. Legacy external model servers may have their own logging settings.
 - Download requests send public model identifiers, not your writing. Initial model downloads require internet access; inference uses the downloaded model locally.
-- The app saves setup/launch choices, app permissions, local AI configuration, selected model identifiers, and download-job metadata. Text and suggestions stay in memory. Opening at login is a separate, explicit choice.
+- The app saves setup/launch choices, app permissions, local AI configuration, selected model identifiers, writing style, and download-job metadata. Text and suggestions stay in memory. Opening at login is a separate, explicit choice.
 - Apply rechecks permissions, app, field, selection, and exact original text before writing, then verifies the result. **Suggestions never apply automatically.**
 
 ## Compatibility and limits

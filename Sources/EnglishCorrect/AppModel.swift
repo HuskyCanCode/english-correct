@@ -56,6 +56,18 @@ final class AppModel: ObservableObject {
     @Published var provider: LocalProvider = .builtIn { didSet { if provider != oldValue && !isRestoringSettings { switchProvider() } } }
     @Published var baseURL = "http://127.0.0.1:1234" { didSet { if baseURL != oldValue { saveConfiguration() } } }
     @Published var model = "" { didSet { if model != oldValue { defaultsModelChanged() } } }
+    @Published var writingStyle: WritingStyle = .casual {
+        didSet {
+            guard writingStyle != oldValue, !isRestoringSettings else { return }
+            defaults.set(writingStyle.rawValue, forKey: "writingStyle")
+            let target = snapshot
+            draftChanged()
+            invalidateExternal()
+            guard let target, let current = monitor.captureCurrent(intent: target.intent),
+                  current.isSame(as: target) else { return }
+            received(current, immediate: true)
+        }
+    }
     @Published var models: [String] = []
     @Published var connectionStatus = "Connect to a model on this Mac"
     @Published var checkingConnection = false
@@ -142,6 +154,7 @@ final class AppModel: ObservableObject {
         if defaults.object(forKey: "automaticSuggestionDelay") != nil {
             automaticSuggestionDelay = AutomaticSuggestionTiming.normalized(defaults.double(forKey: "automaticSuggestionDelay"))
         }
+        if let raw = defaults.string(forKey: "writingStyle"), let saved = WritingStyle(rawValue: raw) { writingStyle = saved }
         setupCompleted = defaults.bool(forKey: "setupGuideCompleted")
         resumeSuggestionsAfterLaunch = defaults.bool(forKey: "rememberedAutomaticSuggestions")
         section = hasUsedApp ? "Write" : "Setup"
@@ -185,7 +198,20 @@ final class AppModel: ObservableObject {
         scheduledSetupTask?.cancel()
     }
 
-    var configuration: LocalAIConfiguration { LocalAIConfiguration(provider: provider, baseURL: baseURL, model: model) }
+    var configuration: LocalAIConfiguration { LocalAIConfiguration(provider: provider, baseURL: baseURL, model: model, style: writingStyle) }
+    private var setupConfiguration: LocalAIConfiguration {
+        // Readiness checks measure grammar reliability independently of tone.
+        var config = configuration
+        config.style = .casual
+        return config
+    }
+    var activeModelLabel: String {
+        guard !model.isEmpty else { return "No model selected" }
+        if let item = ModelCatalog.recommendations.first(where: { library.isSelected($0, modelID: model) }) {
+            return "\(item.tier) · \(item.name)"
+        }
+        return model
+    }
     var allowedIDs: Set<String> { Set(permissions.filter(\.allowed).map(\.id)) }
     var allowedCount: Int { allowedIDs.count }
     var readyInApp: Bool { setupAIState.isReady && library.deletingID == nil }
@@ -199,7 +225,7 @@ final class AppModel: ObservableObject {
             setupAIState = .failed("Wait for model deletion to finish, then check setup again.")
             return
         }
-        let config = configuration
+        let config = setupConfiguration
         guard !config.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             setupAIState = .failed("Choose a local model in Models, then run the setup check.")
             return
@@ -236,7 +262,7 @@ final class AppModel: ObservableObject {
     }
 
     private func setupCheckIsCurrent(_ epoch: UUID, configuration config: LocalAIConfiguration) -> Bool {
-        !Task.isCancelled && setupEpoch == epoch && configuration == config && library.deletingID == nil
+        !Task.isCancelled && setupEpoch == epoch && setupConfiguration == config && library.deletingID == nil
     }
 
     private func scheduleSetupVerification() {
@@ -247,11 +273,11 @@ final class AppModel: ObservableObject {
               !baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               library.deletingID == nil,
               !setupAIState.isChecking, !setupAIState.isReady else { return }
-        let config = configuration
+        let config = setupConfiguration
         scheduledSetupTask = Task { [weak self] in
             do { try await Task.sleep(nanoseconds: 550_000_000) }
             catch { return }
-            guard let self, !Task.isCancelled, self.configuration == config,
+            guard let self, !Task.isCancelled, self.setupConfiguration == config,
                   self.library.deletingID == nil, !self.checkingConnection,
                   !self.setupAIState.isChecking, !self.setupAIState.isReady else { return }
             // checkSetup invalidates all previous verification work. Detach this
@@ -512,12 +538,13 @@ final class AppModel: ObservableObject {
         received(value)
     }
 
-    private func received(_ value: FieldSnapshot?) {
+    private func received(_ value: FieldSnapshot?, immediate: Bool = false) {
         invalidateExternal()
         guard let value else { return }
         guard library.deletingID == nil else { return }
         guard readyInOtherApps else { return }
         let manual = value.intent == .shortcut
+        let showsProgress = manual || immediate
         manualRequestActive = manual
         snapshot = value
         fieldID = UUID().uuidString
@@ -530,19 +557,19 @@ final class AppModel: ObservableObject {
                                       enabled: enabled || manual, allowedBundleIDs: allowedIDs,
                                       allowShortText: manual) else {
             externalStatus = "This text cannot be checked. Focus an allowed input and try again."
-            if manual { panel?.show(near: value.frame) }
+            if showsProgress { panel?.show(near: value.frame) }
             return
         }
         let config = configuration
         externalBusy = true
-        if manual {
+        if showsProgress {
             externalStatus = "Checking \(value.scopeLabel.lowercased())…"
             panel?.show(near: value.frame)
         }
         let delay = automaticSuggestionDelay
         externalTask = Task {
             do {
-                if !manual { try await waitForAutomaticSuggestion(delay) }
+                if !manual && !immediate { try await waitForAutomaticSuggestion(delay) }
                 guard !Task.isCancelled, canPresent(ticket, value: value, id: id) else { return }
                 let correction = try await correctText(value.text, config)
                 guard !Task.isCancelled, configuration == config, canPresent(ticket, value: value, id: id) else { return }
@@ -551,7 +578,7 @@ final class AppModel: ObservableObject {
                     externalCorrection = correction
                     externalStatus = value.canApply ? "" : "This app doesn't allow direct replacement. Use Copy to paste the suggestion yourself."
                     panel?.show(near: value.frame)
-                } else if manual {
+                } else if showsProgress {
                     externalStatus = "Looks good. No changes suggested."
                     panel?.show(near: value.frame)
                 }
@@ -570,7 +597,7 @@ final class AppModel: ObservableObject {
                 externalStatus = error.localizedDescription
                 externalNeedsSetup = true
                 externalSettingsDestination = needsSetupCheck ? .setup : .models
-                if manual { panel?.show(near: value.frame) }
+                if showsProgress { panel?.show(near: value.frame) }
             }
         }
     }

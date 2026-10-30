@@ -1,3 +1,12 @@
+# Version 1.7.4 writing-style and model-label validation
+
+- Full suite: 331 tests, 329 passed, two optional legacy live tests skipped, zero failures.
+- Tests verify Casual defaults, saved/invalid preferences, the selected model label, and style instructions for all supported providers. Built-in runtime configuration carries the selected style into inference.
+- Changing style regenerates the original selected passage or whole input immediately. Late results from the previous style are discarded; changed source text is not reviewed or replaced. Readiness and automatic-suggestion preferences remain intact.
+- The packaged built-in Fast model passed the three grammar/preservation smoke cases and all three style cases on synthetic text. The same informal report request became “Can you please send me the report when you have the opportunity?” in Formal, standard conversational wording in Casual, and relaxed abbreviations in Slang. This is a small quality check, not a broad writing benchmark; model wording can vary.
+- The 1.7.4/build 22 DMG passed integrity, mounted-app, and strict signature checks. It is Apple Development-signed and is not Apple-notarized.
+- In a disposable native component preview, the production suggestion view displayed the Fast model name and Casual default. Selecting Slang and Formal changed the selected control and regenerated the preview. This used an injected corrector and synthetic Accessibility fields; live model quality and arbitrary third-party editor compatibility are separate checks.
+
 # Version 1.7.3 Return-to-accept validation
 
 - Full suite: 324 tests, 322 passed, two optional legacy live tests skipped, zero failures.

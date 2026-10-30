@@ -344,6 +344,22 @@ final class SetupReadinessTests: XCTestCase {
         XCTAssertFalse(fixture.defaults.bool(forKey: "rememberedAutomaticSuggestions"))
     }
 
+    func testStyleChangeDoesNotInvalidateModelReadinessCheck() async throws {
+        let fixture = try SetupFixture()
+        defer { fixture.close() }
+        fixture.app.writingStyle = .formal
+        fixture.client.holdSample = true
+        fixture.app.checkSetup()
+        try await setupEventually { fixture.client.pendingSampleCount == 1 }
+        fixture.app.writingStyle = .slang
+        fixture.client.finishSample()
+        try await fixture.waitForSetup()
+        XCTAssertEqual(fixture.app.setupAIState, .ready)
+        XCTAssertEqual(fixture.app.writingStyle, .slang)
+        XCTAssertEqual(fixture.client.sampleRequests.first?.configuration.style, .casual)
+        XCTAssertFalse(fixture.app.enabled)
+    }
+
     func testSetupToWriteNavigationPreservesAutomaticSuggestionsWithoutReadingInputs() async throws {
         let fixture = try SetupFixture()
         defer { fixture.close() }

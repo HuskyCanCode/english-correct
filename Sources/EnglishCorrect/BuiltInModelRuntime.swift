@@ -122,7 +122,8 @@ enum BuiltInAI {
     static func correct(_ text: String, configuration: LocalAIConfiguration) async throws -> Correction {
         let url = try await BuiltInModelStore.shared.modelURL(for: configuration.model)
         try Task.checkCancellation()
-        let config = try await BuiltInModelRuntime.shared.ensureLoaded(modelID: configuration.model, modelURL: url)
+        var config = try await BuiltInModelRuntime.shared.ensureLoaded(modelID: configuration.model, modelURL: url)
+        config.style = configuration.style
         try Task.checkCancellation()
         return try await LocalAIClient(configuration: config).correct(text)
     }

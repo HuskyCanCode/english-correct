@@ -148,6 +148,65 @@ final class ShortcutWorkflowTests: XCTestCase {
         }
     }
 
+    func testPopupStyleChangeRegeneratesOriginalSelectionAndRejectsOldStyleReply() async throws {
+        let fixture = try await ShortcutFixture()
+        defer { fixture.close() }
+        let prefix = "Keep this sentence. "
+        let selected = "She go yesterday."
+        fixture.backend.text = prefix + selected
+        fixture.backend.selection = NSRange(location: prefix.utf16.count, length: selected.utf16.count)
+        fixture.backend.selectionSettable = true
+        fixture.client.holdResponses = true
+        fixture.app.triggerShortcut()
+        await waitUntil { fixture.client.pendingCount == 1 }
+        XCTAssertEqual(fixture.client.requests.first?.configuration.style, .casual)
+        fixture.app.writingStyle = .formal
+        await waitUntil { fixture.client.pendingCount == 2 }
+        XCTAssertEqual(fixture.client.requests.map(\.text), [selected, selected])
+        XCTAssertEqual(fixture.client.requests.map { $0.configuration.style }, [.casual, .formal])
+        XCTAssertEqual(fixture.app.setupAIState, .ready)
+        fixture.client.finish(at: 1, corrected: "She went yesterday.")
+        await waitUntil { fixture.app.externalCorrection != nil }
+        fixture.client.finish(at: 0, corrected: "An old casual reply.")
+        await waitUntil { fixture.client.returnedResponses == 2 }
+        await settle()
+        XCTAssertEqual(fixture.app.externalCorrection?.corrected, "She went yesterday.")
+        XCTAssertEqual(fixture.app.externalScope, "Selected text")
+        XCTAssertEqual(fixture.backend.text, prefix + selected)
+        XCTAssertTrue(fixture.backend.writes.isEmpty)
+        XCTAssertEqual(fixture.defaults.string(forKey: "writingStyle"), "formal")
+    }
+
+    func testAutomaticPopupStyleChangeChecksImmediatelyAndKeepsSuggestionsEnabled() async throws {
+        let clock = TypingPauseClock()
+        let fixture = try await ShortcutFixture(waitForAutomaticSuggestion: { try await clock.wait($0) })
+        defer { clock.finishAll(); fixture.close() }
+        fixture.app.setAutomaticSuggestions(true)
+        await waitUntil { clock.durations.count == 1 }
+        clock.finish()
+        await waitUntil { fixture.app.externalCorrection != nil }
+        fixture.app.writingStyle = .slang
+        await waitUntil { fixture.client.requests.count == 2 && fixture.app.externalCorrection != nil }
+        XCTAssertEqual(clock.durations.count, 1, "Explicit style choices bypass the typing pause")
+        XCTAssertEqual(fixture.client.requests.last?.configuration.style, .slang)
+        XCTAssertTrue(fixture.app.enabled)
+        XCTAssertEqual(fixture.app.setupAIState, .ready)
+        XCTAssertTrue(fixture.backend.writes.isEmpty)
+    }
+
+    func testChangingPopupStyleAfterSourceChangesDoesNotReviewNewOrStaleText() async throws {
+        let fixture = try await ShortcutFixture()
+        defer { fixture.close() }
+        fixture.app.triggerShortcut()
+        await waitUntil { fixture.app.externalCorrection != nil }
+        fixture.backend.text = "A new sentence."
+        fixture.app.writingStyle = .slang
+        await settle()
+        XCTAssertEqual(fixture.client.requests.count, 1)
+        XCTAssertNil(fixture.app.externalCorrection)
+        XCTAssertTrue(fixture.backend.writes.isEmpty)
+    }
+
     func testShortcutChecksWholeInputAndAppliesOnlyAfterUserActionWhilePaused() async throws {
         let fixture = try await ShortcutFixture()
         defer { fixture.close() }
