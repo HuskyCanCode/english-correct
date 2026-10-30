@@ -106,6 +106,7 @@ struct SetupGuideView: View {
             Text("When on, English Correct checks the focused field after you pause typing, only in apps you allow. You always review changes before applying them.")
                 .font(.system(size: 13)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            AutomaticSuggestionTimingView(model: model)
             if !model.readyInOtherApps {
                 Text("Complete the four checks above to use suggestions in other apps.")
                     .font(.system(size: 12, weight: .medium)).foregroundStyle(GlassTheme.accent)

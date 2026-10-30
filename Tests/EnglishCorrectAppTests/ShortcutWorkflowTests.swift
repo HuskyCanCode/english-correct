@@ -56,6 +56,54 @@ final class ShortcutWorkflowTests: XCTestCase {
         print("Live shortcut model: \(model); whole input: \(wholeCorrection.corrected); selected-only result: \(fixture.backend.text)")
     }
 
+    func testAutomaticCheckWaitsForConfiguredTypingPause() async throws {
+        let clock = TypingPauseClock()
+        let fixture = try await ShortcutFixture(waitForAutomaticSuggestion: { try await clock.wait($0) })
+        defer { clock.finishAll(); fixture.close() }
+        fixture.app.automaticSuggestionDelay = 2.5
+        fixture.app.setAutomaticSuggestions(true)
+        await waitUntil { clock.durations.count == 1 }
+        XCTAssertEqual(clock.durations, [2.5])
+        XCTAssertTrue(fixture.client.requests.isEmpty)
+        clock.finish()
+        await waitUntil { fixture.app.externalCorrection != nil }
+        XCTAssertEqual(fixture.client.requests.map(\.text), ["She go yesterday."])
+    }
+
+    func testChangingDelayCancelsOldTimerAndUsesNewDelay() async throws {
+        let clock = TypingPauseClock()
+        let fixture = try await ShortcutFixture(waitForAutomaticSuggestion: { try await clock.wait($0) })
+        defer { clock.finishAll(); fixture.close() }
+        fixture.app.automaticSuggestionDelay = 3
+        fixture.app.setAutomaticSuggestions(true)
+        await waitUntil { clock.durations.count == 1 }
+        fixture.app.automaticSuggestionDelay = 0.7
+        await waitUntil { clock.durations.count == 2 }
+        XCTAssertEqual(clock.durations, [3, 0.7])
+        clock.finish()
+        await Task.yield()
+        XCTAssertTrue(fixture.client.requests.isEmpty, "The canceled timer cannot send text")
+        clock.finish()
+        await waitUntil { fixture.app.externalCorrection != nil }
+        XCTAssertEqual(fixture.client.requests.count, 1)
+        XCTAssertTrue(fixture.app.enabled)
+    }
+
+    func testKeyboardShortcutBypassesDelayAndChangingTimingPreservesManualCheck() async throws {
+        let clock = TypingPauseClock()
+        let fixture = try await ShortcutFixture(waitForAutomaticSuggestion: { try await clock.wait($0) })
+        defer { clock.finishAll(); fixture.close() }
+        fixture.app.automaticSuggestionDelay = 10
+        fixture.client.holdResponses = true
+        fixture.app.triggerShortcut()
+        await waitUntil { fixture.client.pendingCount == 1 }
+        fixture.app.automaticSuggestionDelay = 0.3
+        fixture.client.finish()
+        await waitUntil { fixture.app.externalCorrection != nil }
+        XCTAssertTrue(clock.durations.isEmpty)
+        XCTAssertEqual(fixture.client.requests.count, 1)
+    }
+
     func testShortcutChecksWholeInputAndAppliesOnlyAfterUserActionWhilePaused() async throws {
         let fixture = try await ShortcutFixture()
         defer { fixture.close() }
@@ -559,7 +607,10 @@ private final class ShortcutFixture {
     let client: ShortcutClient
     let app: AppModel
 
-    init(allowed: Bool = true, liveModel: String? = nil) async throws {
+    init(allowed: Bool = true, liveModel: String? = nil,
+         waitForAutomaticSuggestion: @escaping (Double) async throws -> Void = { seconds in
+             try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+         }) async throws {
         defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defaults.removePersistentDomain(forName: suite)
         defaults.set(liveModel ?? "test-local-model", forKey: "model")
@@ -575,6 +626,7 @@ private final class ShortcutFixture {
         let client = client
         let selectedModel = liveModel ?? "test-local-model"
         app = AppModel(defaults: defaults, monitor: monitor, startMonitoring: false,
+                       waitForAutomaticSuggestion: waitForAutomaticSuggestion,
                        listModels: { configuration in
             if liveModel != nil { return try await LocalAIClient(configuration: configuration).models() }
             return [selectedModel]
@@ -702,5 +754,26 @@ private final class ShortcutBackend: AccessibilityBackend {
             return .attributeUnsupported
         }
         return .success
+    }
+}
+
+@MainActor
+private final class TypingPauseClock {
+    var durations: [Double] = []
+    private var pending: [CheckedContinuation<Void, Error>] = []
+    // Ignore cancellation deliberately so tests exercise the coordinator’s
+    // generation guard, including a stale timer completing after a new one.
+    func wait(_ seconds: Double) async throws {
+        durations.append(seconds)
+        try await withCheckedThrowingContinuation { pending.append($0) }
+    }
+    func finish() {
+        guard !pending.isEmpty else { return }
+        pending.removeFirst().resume()
+    }
+    func finishAll() {
+        let unfinished = pending
+        pending.removeAll()
+        unfinished.forEach { $0.resume(throwing: CancellationError()) }
     }
 }

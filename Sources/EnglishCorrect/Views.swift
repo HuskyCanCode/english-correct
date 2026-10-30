@@ -82,14 +82,18 @@ struct MainView: View {
                     Button("Open setup guide") { model.openSetup() }
                 }.padding(18).contentSurface(cornerRadius: 18)
             }
-            HStack(spacing: 13) {
-                Image(systemName: model.enabled ? "sparkle" : "pause.circle").font(.system(size: 24)).foregroundStyle(teal)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(model.enabled ? "Automatic suggestions are on" : "Automatic suggestions are paused").font(.system(size: 14, weight: .semibold))
-                    Text(model.enabled ? model.monitoringStatus : (model.readyInOtherApps ? "The keyboard shortcut still works in allowed apps." : "Finish setup to use suggestions in other apps.")).font(.system(size: 12)).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 13) {
+                    Image(systemName: model.enabled ? "sparkle" : "pause.circle").font(.system(size: 24)).foregroundStyle(teal)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(model.enabled ? "Automatic suggestions are on" : "Automatic suggestions are paused").font(.system(size: 14, weight: .semibold))
+                        Text(model.enabled ? model.monitoringStatus : (model.readyInOtherApps ? "The keyboard shortcut still works in allowed apps." : "Finish setup to use suggestions in other apps.")).font(.system(size: 12)).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Toggle("Enable suggestions", isOn: Binding(get: { model.enabled }, set: { model.setAutomaticSuggestions($0) })).labelsHidden().toggleStyle(.switch).accessibilityLabel("Enable suggestions")
                 }
-                Spacer()
-                Toggle("Enable suggestions", isOn: Binding(get: { model.enabled }, set: { model.setAutomaticSuggestions($0) })).labelsHidden().toggleStyle(.switch).accessibilityLabel("Enable suggestions")
+                Divider()
+                AutomaticSuggestionTimingView(model: model)
             }.padding(18).contentSurface(cornerRadius: 18, tinted: true)
             shortcutCard
             VStack(alignment: .leading, spacing: 13) {

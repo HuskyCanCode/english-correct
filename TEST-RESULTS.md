@@ -1,3 +1,10 @@
+# Version 1.7.2 automatic-suggestion timing validation
+
+- Full suite: 320 tests, 318 passed, two optional legacy live tests skipped, zero failures.
+- Timing tests confirm the configured pause is used before automatic inference, a changed delay invalidates the previous timer, and manual keyboard checks bypass the delay even when the preference changes mid-request.
+- Preferences restore the chosen interval without enabling automatic suggestions. Invalid or non-finite saved/settings values are normalized to the supported 0.3–10 second range.
+- The default remains 1.2 seconds. Model processing time is additional; this setting does not promise an exact popup arrival time.
+
 # Version 1.7.1 automatic-suggestions validation
 
 - Full automated suite: 315 tests, 313 passed, two optional legacy live tests skipped, zero failures.

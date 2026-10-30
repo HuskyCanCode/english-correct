@@ -39,6 +39,17 @@ final class AppModel: ObservableObject {
             resumeRememberedSuggestionsIfReady()
         }
     }
+    @Published var automaticSuggestionDelay = AutomaticSuggestionTiming.defaultSeconds {
+        didSet {
+            let seconds = AutomaticSuggestionTiming.normalized(automaticSuggestionDelay)
+            if automaticSuggestionDelay != seconds { automaticSuggestionDelay = seconds }
+            guard !isRestoringSettings, oldValue != seconds else { return }
+            defaults.set(seconds, forKey: "automaticSuggestionDelay")
+            // A settings change cancels the old automatic timer; manual checks
+            // keep their current target and never use the typing delay.
+            if !manualRequestActive { received(monitor.captureCurrent()) }
+        }
+    }
     @Published var monitoringStatus = "Suggestions are paused"
     @Published var permissions: [AppPermission] = []
     @Published var runningApps: [AppPermission] = []
@@ -83,6 +94,7 @@ final class AppModel: ObservableObject {
     private enum ExternalSettingsDestination { case appAccess, models, setup }
     private var externalSettingsDestination: ExternalSettingsDestination = .appAccess
     private let correctText: (String, LocalAIConfiguration) async throws -> Correction
+    private let waitForAutomaticSuggestion: (Double) async throws -> Void
     private let listModels: (LocalAIConfiguration) async throws -> [String]
     private var gate = SuggestionGate()
     private var snapshot: FieldSnapshot?
@@ -96,6 +108,9 @@ final class AppModel: ObservableObject {
 
     init(defaults: UserDefaults = .standard, monitor: AccessibilityMonitor? = nil, modelLibrary: ModelLibrary? = nil,
          startMonitoring: Bool = true,
+         waitForAutomaticSuggestion: @escaping (Double) async throws -> Void = { seconds in
+             try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+         },
          listModels: @escaping (LocalAIConfiguration) async throws -> [String] = { config in
              if config.provider == .builtIn { return try await BuiltInAI.models(config) }
              return try await LocalAIClient(configuration: config).models()
@@ -113,6 +128,7 @@ final class AppModel: ObservableObject {
         self.monitor = monitor ?? AccessibilityMonitor()
         self.correctText = correctText
         self.listModels = listModels
+        self.waitForAutomaticSuggestion = waitForAutomaticSuggestion
         library = modelLibrary ?? ModelLibrary(defaults: defaults)
         if let data = defaults.data(forKey: "appPermissions"), let saved = try? JSONDecoder().decode([AppPermission].self, from: data) { permissions = saved }
         if let raw = defaults.string(forKey: "provider"), let saved = LocalProvider(rawValue: raw) { provider = saved }
@@ -123,6 +139,9 @@ final class AppModel: ObservableObject {
             baseURL = provider.defaultBaseURL
         }
         if let saved = defaults.string(forKey: "correctionShortcut"), let choice = CorrectionShortcut(rawValue: saved) { shortcut = choice }
+        if defaults.object(forKey: "automaticSuggestionDelay") != nil {
+            automaticSuggestionDelay = AutomaticSuggestionTiming.normalized(defaults.double(forKey: "automaticSuggestionDelay"))
+        }
         setupCompleted = defaults.bool(forKey: "setupGuideCompleted")
         resumeSuggestionsAfterLaunch = defaults.bool(forKey: "rememberedAutomaticSuggestions")
         section = hasUsedApp ? "Write" : "Setup"
@@ -520,9 +539,10 @@ final class AppModel: ObservableObject {
             externalStatus = "Checking \(value.scopeLabel.lowercased())…"
             panel?.show(near: value.frame)
         }
+        let delay = automaticSuggestionDelay
         externalTask = Task {
             do {
-                if !manual { try await Task.sleep(nanoseconds: 1_200_000_000) }
+                if !manual { try await waitForAutomaticSuggestion(delay) }
                 guard !Task.isCancelled, canPresent(ticket, value: value, id: id) else { return }
                 let correction = try await correctText(value.text, config)
                 guard !Task.isCancelled, configuration == config, canPresent(ticket, value: value, id: id) else { return }
